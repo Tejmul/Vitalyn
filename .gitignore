@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+
+# builds
+.next/
+dist/
+*.tsbuildinfo
+
+# secrets (copy the .env.example files instead)
+.env
+.env.local
+.env.*.local
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# source assets downloaded from a reference site (third-party logos and photos of real people)
+/Images/
+
+# research PDF lives in docs/research/
+/Hospital Appointment Platform*.pdf
