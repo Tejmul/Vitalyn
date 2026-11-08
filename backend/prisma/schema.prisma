@@ -11,10 +11,9 @@ datasource db {
 
 model User {
   id           String   @id @default(cuid())
-  email        String   @unique
-  username     String   @unique
+  // Everyone logs in with their mobile number and a one-time code.
   phone        String?  @unique
-  passwordHash String? // null for phone-OTP accounts
+  email        String?  @unique
   name         String
   role         Role     @default(USER)
   // DPDP: when and to which notice version the user consented
@@ -31,6 +30,36 @@ model User {
   appointments  Appointment[]
   profiles      PatientProfile[]
   notifications Notification[]
+  refreshTokens RefreshToken[]
+}
+
+/// One OTP sent to a phone. Only a hash of the code is stored.
+model OtpChallenge {
+  id         String     @id @default(cuid())
+  phone      String
+  purpose    OtpPurpose @default(LOGIN)
+  codeHash   String
+  attempts   Int        @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@index([phone, purpose, createdAt])
+}
+
+/// Long-lived session token kept in an httpOnly cookie. Rotated on every use.
+model RefreshToken {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 /// A person the account holder books for: themselves or a family member.
@@ -274,6 +303,11 @@ enum AppointmentStatus {
   CANCELLED
   NO_SHOW
   EXPIRED
+}
+
+enum OtpPurpose {
+  LOGIN
+  DELETE_ACCOUNT
 }
 
 enum ApplicationStatus {
