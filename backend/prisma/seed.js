@@ -40,6 +40,7 @@ const hospitals = [
     doctors: [
       {
         name: "Dr. Kavita Shah",
+        autoConfirm: false,
         specialty: "Cardiology",
         qualification: "MD, DM (Cardiology)",
         experienceYears: 18,
@@ -55,7 +56,6 @@ const hospitals = [
         registrationNo: "DEMO-REG-1002",
         fee: 700,
         languages: ["English", "Gujarati"],
-        autoApprove: true,
       },
       {
         name: "Dr. Farah Qureshi",
@@ -128,7 +128,6 @@ const hospitals = [
         registrationNo: "DEMO-REG-1005",
         fee: 600,
         languages: ["English", "Gujarati", "Hindi"],
-        autoApprove: true,
       },
     ],
     events: [
@@ -289,7 +288,6 @@ const hospitals = [
         registrationNo: "DEMO-REG-1011",
         fee: 600,
         languages: ["English", "Kannada", "Hindi"],
-        autoApprove: true,
       },
     ],
     events: [
@@ -391,7 +389,6 @@ const hospitals = [
         registrationNo: "DEMO-REG-1015",
         fee: 500,
         languages: ["English", "Hindi"],
-        autoApprove: true,
       },
     ],
     events: [
@@ -461,6 +458,7 @@ const hospitals = [
 
 async function main() {
   console.log("Clearing old data…");
+  await prisma.otpChallenge.deleteMany();
   await prisma.hospitalApplication.deleteMany();
   await prisma.appointment.deleteMany();
   await prisma.promotion.deleteMany();
@@ -595,7 +593,8 @@ async function main() {
       doctorId: rohan,
       date: dateStr(2),
       time: "11:15",
-      status: "DOCTOR_APPROVED",
+      status: "CONFIRMED",
+      tokenNumber: 1,
       patientName: "Riya Patel",
       reason: "Knee pain after running",
     },
@@ -618,7 +617,7 @@ async function main() {
       reason: "Routine BP check",
     },
   ];
-  const ACTIVE = ["PENDING", "DOCTOR_APPROVED", "CONFIRMED"];
+  const ACTIVE = ["PENDING", "CONFIRMED"];
   for (const b of bookings) {
     const isFather = b.profileId === "father";
     const a = await prisma.appointment.create({
@@ -634,7 +633,7 @@ async function main() {
       },
       include: { doctor: true },
     });
-    await prisma.appointmentEvent.create({ data: { appointmentId: a.id, action: "book", to: "PENDING", actorId: patient.id } });
+    await prisma.appointmentEvent.create({ data: { appointmentId: a.id, action: "book", to: b.status === "PENDING" ? "PENDING" : "CONFIRMED", actorId: patient.id } });
     if (b.status === "CONFIRMED") {
       await prisma.notification.create({
         data: {
