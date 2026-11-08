@@ -19,13 +19,12 @@ import { EventCard } from "@/components/landing/Events";
 import { Empty, Panel, StatusBadge } from "./bits";
 
 const ACTIVE = new Set(["PENDING", "DOCTOR_APPROVED", "CONFIRMED"]);
-const STEPS = ["PENDING", "DOCTOR_APPROVED", "CONFIRMED"] as const;
 const canMove = (a: Appointment) => ACTIVE.has(a.status) && new Date(`${a.date}T${a.time}:00+05:30`).getTime() - Date.now() > 2 * 3600_000;
 const forWhom = (a: Appointment) => (a.profile && a.profile.relation !== "Self" ? `${a.patientName} (${a.profile.relation})` : a.patientName);
 
 function Progress({ a }: { a: Appointment }) {
-  const idx = STEPS.indexOf(a.status as (typeof STEPS)[number]);
-  const labels = ["Requested", "Doctor approved", "Confirmed"];
+  const idx = a.status === "CONFIRMED" ? 1 : 0;
+  const labels = ["Requested", "Confirmed, token issued"];
   return (
     <ol className="flex items-center gap-2">
       {labels.map((l, i) => {
