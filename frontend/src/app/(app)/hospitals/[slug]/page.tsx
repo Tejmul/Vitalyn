@@ -58,6 +58,11 @@ export default function HospitalPage() {
                   <Siren className="size-3.5" /> 24×7 emergency
                 </span>
               )}
+              {h.accreditations?.map((a) => (
+                <span key={a} className="inline-flex items-center gap-1.5 rounded-full bg-signal/10 px-2.5 py-1 text-[12px] font-semibold text-signal" title={`${a} accredited (checked by Vitalyn)`}>
+                  <BadgeCheck className="size-3.5" /> {a} accredited
+                </span>
+              ))}
               {h.hfrId && (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-signal/10 px-2.5 py-1 text-[12px] font-semibold text-signal" title={`ABDM Health Facility Registry ID ${h.hfrId}`}>
                   <BadgeCheck className="size-3.5" /> ABDM registered
@@ -138,7 +143,16 @@ export default function HospitalPage() {
                     <span className="block text-[13.5px] text-muted">
                       {d.specialty} · {d.qualification} · {d.experienceYears} yrs
                     </span>
-                    {d.registrationNo && <span className="block text-[12px] text-muted">Reg. no. {d.registrationNo}</span>}
+                    {d.registrationNo && (
+                      <span className="flex items-center gap-1 text-[12px] text-muted">
+                        Reg. no. {d.registrationNo}
+                        {d.registrationVerifiedAt && (
+                          <span className="inline-flex items-center gap-0.5 font-semibold text-signal" title="Checked against the medical council / HPR registry">
+                            <BadgeCheck className="size-3.5" /> verified
+                          </span>
+                        )}
+                      </span>
+                    )}
                     <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-muted">
                       <span className="flex items-center gap-1.5">
                         <Clock className="size-3.5" /> {doctorHours(d)}

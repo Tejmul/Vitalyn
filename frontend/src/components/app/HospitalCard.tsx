@@ -72,6 +72,7 @@ export function HospitalCard({ h, showHighlight }: { h: Hospital; showHighlight?
         </div>
         <p className="mt-1 text-[13.5px] text-muted">
           {h.address.split(",")[0]}, {h.city}
+          {h.accreditations && h.accreditations.length > 0 && <span className="ml-2 font-semibold text-signal">{h.accreditations.join(" · ")}</span>}
         </p>
         {next && (
           <p className="mt-2 flex items-center gap-1.5 text-[13px] font-medium text-signal">
