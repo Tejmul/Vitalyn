@@ -329,3 +329,19 @@ Vitalyn sends OTPs through MSG91's Flow API (`POST https://control.msg91.com/api
 4. New MSG91 auth keys may have IP whitelisting on: add your server's IP in MSG91.
 
 Until `MSG91_AUTH_KEY` and `MSG91_OTP_FLOW_ID` are set, development shows codes on screen; production refuses to send codes rather than fail silently.
+
+### Booking messages
+
+Patient updates are written to an outbox (`OutboundMessage`) and sent by a worker every 15 seconds, so API requests never wait on MSG91. Failures are retried after 1, 5 and 15 minutes, then marked failed. Admin → **Text messages** shows sent, waiting, failed and skipped counts, SMS per booking, and recent problems.
+
+Each message type needs its own DLT-approved template. Every template can use `##name##`, `##token##`, `##doctor##`, `##when##` and `##hospital##` (each value is cut to 30 characters).
+
+| Message | Env var | Sent when | Example template text (register your own wording on DLT) |
+|---|---|---|---|
+| Booking confirmed | `MSG91_FLOW_CONFIRMED` | booking confirmed (instantly or by the desk/doctor), walk-in with a mobile | `##name##, your visit with ##doctor## at ##hospital## on ##when## is confirmed. Token ##token##.` |
+| 2-hour reminder | `MSG91_FLOW_REMINDER` | 2 hours before a confirmed visit | `Reminder: ##doctor## at ##hospital##, ##when##. Your token is ##token##.` |
+| Not accepted | `MSG91_FLOW_REJECTED` | desk or doctor rejects | `##name##, ##doctor## could not take your ##when## booking. Please book another time.` |
+| Request expired | `MSG91_FLOW_EXPIRED` | nobody accepted by the deadline | `##hospital## did not reply in time for ##when##. Your slot was released.` |
+| Doctor on leave | `MSG91_FLOW_DOCTOR_LEAVE` | the desk marks the doctor on leave | `##doctor## is unavailable on ##when##. Your booking is cancelled. Please book another day.` |
+
+A message type with no template ID set is recorded as **skipped** (with the reason) instead of failing silently. In development without keys, messages are printed in the API log.
