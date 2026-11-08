@@ -32,6 +32,19 @@ model User {
   notifications Notification[]
   refreshTokens RefreshToken[]
   consents      ConsentRecord[]
+  savedHospitals SavedHospital[]
+}
+
+/// "My hospitals": hospitals a patient saved for one-tap rebooking.
+model SavedHospital {
+  createdAt DateTime @default(now())
+
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hospitalId String
+  hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+
+  @@id([userId, hospitalId])
 }
 
 /// One OTP sent to a phone. Only a hash of the code is stored.
@@ -89,6 +102,8 @@ model Hospital {
   state       String
   pincode     String
   phone       String
+  // Front-desk WhatsApp number (10 digits) for a "WhatsApp the desk" button; optional
+  whatsapp    String?
   lat         Float
   lng         Float
   specialties String[]
@@ -112,6 +127,7 @@ model Hospital {
   promotions   Promotion[]
   appointments Appointment[]
   staff        User[]
+  savedBy      SavedHospital[]
 }
 
 model Doctor {
