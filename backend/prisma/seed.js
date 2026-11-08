@@ -459,6 +459,9 @@ const hospitals = [
 async function main() {
   console.log("Clearing old data…");
   await prisma.otpChallenge.deleteMany();
+  await prisma.auditLog.deleteMany();
+  await prisma.incident.deleteMany();
+  await prisma.consentRecord.deleteMany();
   await prisma.outboundMessage.deleteMany();
   await prisma.hospitalApplication.deleteMany();
   await prisma.appointment.deleteMany();
@@ -547,7 +550,7 @@ async function main() {
       hospitalId: sab.id,
     },
   });
-  await prisma.doctor.update({ where: { id: sab.doctorIds[0] }, data: { userId: docUser.id } });
+  await prisma.doctor.update({ where: { id: sab.doctorIds[0] }, data: { userId: docUser.id, registrationVerifiedAt: new Date() } });
   const patient = await prisma.user.create({
     data: {
       name: "Riya Patel",
@@ -555,6 +558,7 @@ async function main() {
       phone: "9800000001",
       consentAt: new Date(),
       consentVersion: "2026-11-v1",
+      consents: { create: { action: "GRANTED", version: "2026-11-v1", ageConfirmed: true } },
       profiles: {
         create: [
           { name: "Riya Patel", age: 29, gender: "FEMALE", relation: "Self" },
@@ -567,7 +571,7 @@ async function main() {
   const [self, father] = patient.profiles.sort((a, b) => (a.relation === "Self" ? -1 : b.relation === "Self" ? 1 : 0));
   await prisma.hospital.update({
     where: { id: sab.id },
-    data: { registrationNo: "GJ/AMC/CEA/2019/0412", hfrId: "IN2410000187" },
+    data: { registrationNo: "GJ/AMC/CEA/2019/0412", hfrId: "IN2410000187", accreditations: ["NABH", "NABL"] },
   });
   // A few bookings in different states so every dashboard has something to show
   const [kavita, rohan, farah] = sab.doctorIds;
