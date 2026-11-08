@@ -41,6 +41,19 @@ export const MESSAGES = {
   leave: (a, d) => ({ title: "Doctor on leave: booking cancelled", body: `${d.name} is not available on ${when(a).split(",").slice(0, 2).join(",")}. Please pick another day.` }),
 };
 
+/** Values for the SMS templates. Keys must match the variables in your MSG91 DLT templates. */
+export function smsVars(a, doctor, hospital) {
+  return {
+    name: a.patientName.split(" ")[0],
+    token: tokenCode(a.tokenNumber, doctor.name),
+    doctor: doctor.name,
+    when: when(a),
+    hospital: hospital?.name ?? "",
+  };
+}
+
+const SMS_KIND = { accept: "CONFIRMED", reject: "REJECTED", expire: "EXPIRED", leave: "DOCTOR_LEAVE" };
+
 /**
  * Deadline for a manual-approval request: the earlier of 2 hours from now or 2 hours before
  * the slot, but never less than 15 minutes from now.
@@ -96,7 +109,7 @@ export async function transition(tx, appointmentId, action, { actorId = null, ro
   if (!rule) throw new HttpError(400, `Unknown action ${action}`);
   if (!rule.roles.includes(role)) throw forbidden(`Only ${rule.roles.join(" or ").toLowerCase()} accounts can do that`);
 
-  const appt = await tx.appointment.findUnique({ where: { id: appointmentId }, include: { doctor: true } });
+  const appt = await tx.appointment.findUnique({ where: { id: appointmentId }, include: { doctor: true, hospital: { select: { name: true } } } });
   if (!appt) throw new HttpError(404, "Appointment not found");
   if (scope?.hospitalId && appt.hospitalId !== scope.hospitalId) throw new HttpError(404, "Appointment not found");
   if (scope?.doctorId && appt.doctorId !== scope.doctorId) throw new HttpError(404, "Appointment not found");
@@ -115,6 +128,9 @@ export async function transition(tx, appointmentId, action, { actorId = null, ro
   await logEvent(tx, appt.id, { action, from: appt.status, to: rule.to, note, actorId });
 
   const msg = (action === "accept" ? MESSAGES.confirmed : MESSAGES[action])?.(updated, appt.doctor);
-  if (msg) await notify(tx, appt.userId, { ...msg, appointmentId: appt.id });
+  if (msg) {
+    const sms = SMS_KIND[action] ? { kind: SMS_KIND[action], vars: smsVars(updated, appt.doctor, appt.hospital) } : undefined;
+    await notify(tx, appt.userId, { ...msg, appointmentId: appt.id, sms });
+  }
   return updated;
 }
