@@ -85,6 +85,8 @@ authRouter.post("/complete-profile", async (req, res) => {
       consentAt: new Date(),
       consentVersion: CONSENT_VERSION,
       profiles: { create: { name: data.name, relation: "Self" } },
+      // DPDP consent log
+      consents: { create: { action: "GRANTED", version: CONSENT_VERSION, ageConfirmed: true } },
     },
   });
   const accessToken = await startSession(req, res, user);
