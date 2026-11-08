@@ -42,3 +42,15 @@ next-env.d.ts
 
 # keep the template
 !.env.example
+
+# Reference assets kept locally only (third-party logos, photos of real people).
+# Only the photos the site actually uses are committed and deployed.
+/public/images/*
+/public/Images/*
+!/public/images/bharosa.jpg
+!/public/images/care-family.jpg
+!/public/images/doctor-phone.jpg
+!/public/images/doctor-team.jpg
+!/public/images/hero-care.jpg
+!/public/images/pediatric.jpg
+!/public/images/trust.jpg
