@@ -6,6 +6,7 @@ import { Clock, Info, Navigation, Star } from "lucide-react";
 import type { Hospital } from "@/lib/types";
 import { km, nextSlotLabel } from "@/lib/format";
 import { HospitalTile } from "@/components/ui/HospitalTile";
+import { SaveButton } from "./SaveButton";
 
 /** Why a sponsored card is where it is. Same wording everywhere a sponsored card appears. */
 export const SPONSORED_WHY =
@@ -52,6 +53,7 @@ export function HospitalCard({ h, showHighlight }: { h: Hospital; showHighlight?
         )}
       </div>
       {h.sponsored && <SponsoredWhy />}
+      <SaveButton hospitalId={h.id} className="absolute right-3 top-3" />
       <div className="flex flex-1 flex-col p-5">
         <div className="flex items-start justify-between gap-3">
           <h3 className="font-display text-[19px] font-bold leading-tight tracking-[-0.03em] text-ink">
