@@ -200,6 +200,7 @@ model Appointment {
   // Requests not approved by this time expire automatically
   approveBy   DateTime?
   paidAt      DateTime? // desk pressed "Paid"
+  reminderSentAt DateTime? // 2-hour reminder queued
   walkIn      Boolean   @default(false)
   walkInPhone String?
   createdAt   DateTime @default(now())
@@ -237,7 +238,30 @@ model AppointmentEvent {
   @@index([appointmentId])
 }
 
-/// Outbox for patient updates. Shown in-app today; a worker can send WhatsApp/SMS later.
+/// A text message waiting to be sent, sent, or failed. A worker sends these; API requests never wait on MSG91.
+model OutboundMessage {
+  id            String        @id @default(cuid())
+  kind          MessageKind
+  phone         String
+  // Values for the DLT template's variables, e.g. { token, doctor, when, hospital }
+  vars          Json
+  status        MessageStatus @default(QUEUED)
+  provider      String? // msg91 | console
+  providerId    String?
+  attempts      Int           @default(0)
+  lastError     String?
+  nextAttemptAt DateTime      @default(now())
+  sentAt        DateTime?
+  createdAt     DateTime      @default(now())
+
+  userId        String?
+  appointmentId String?
+
+  @@index([status, nextAttemptAt])
+  @@index([createdAt])
+}
+
+/// In-app updates for a patient (the bell). Text messages go through OutboundMessage.
 model Notification {
   id            String    @id @default(cuid())
   title         String
@@ -306,6 +330,22 @@ enum AppointmentStatus {
   CANCELLED
   NO_SHOW
   EXPIRED
+}
+
+enum MessageKind {
+  CONFIRMED
+  REMINDER
+  REJECTED
+  EXPIRED
+  DOCTOR_LEAVE
+}
+
+enum MessageStatus {
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+  SKIPPED
 }
 
 enum OtpPurpose {
