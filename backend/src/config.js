@@ -22,6 +22,8 @@ export const config = {
     .map((s) => s.trim())
     .filter(Boolean),
   msg91: {
+    // Override only to point at a mock server in tests
+    baseUrl: (process.env.MSG91_BASE_URL ?? "https://control.msg91.com").replace(/\/$/, ""),
     authKey: process.env.MSG91_AUTH_KEY ?? "",
     senderId: process.env.MSG91_SENDER_ID ?? "",
     otpFlowId: process.env.MSG91_OTP_FLOW_ID ?? "",
@@ -29,5 +31,13 @@ export const config = {
     otpVar: process.env.MSG91_OTP_VAR ?? "otp",
     // MSG91's Flow API documents "flow_id"; newer accounts may use "template_id"
     flowField: process.env.MSG91_FLOW_FIELD ?? "flow_id",
+    // One DLT-approved template per message type. Empty = that message type isn't sent (logged as skipped).
+    flows: {
+      CONFIRMED: process.env.MSG91_FLOW_CONFIRMED ?? "",
+      REMINDER: process.env.MSG91_FLOW_REMINDER ?? "",
+      REJECTED: process.env.MSG91_FLOW_REJECTED ?? "",
+      EXPIRED: process.env.MSG91_FLOW_EXPIRED ?? "",
+      DOCTOR_LEAVE: process.env.MSG91_FLOW_DOCTOR_LEAVE ?? "",
+    },
   },
 };
