@@ -1,9 +1,10 @@
 import { Router } from "express";
-import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { HttpError, forbidden } from "../lib/http.js";
 import { publicUser } from "../lib/serialize.js";
+import { requestOtp, verifyOtp } from "../lib/otp.js";
+import { endAllSessions, endSession } from "../lib/session.js";
 import { requireAuth } from "../middleware/auth.js";
 
 /** The signed-in user's own data: notifications and DPDP rights (export, delete). */
@@ -41,20 +42,29 @@ meRouter.get("/export", async (req, res) => {
     },
   });
   const { profiles, notifications, appointments, ...rest } = user;
-  res.setHeader("Content-Disposition", `attachment; filename="vitalyn-data-${user.username}.json"`);
+  res.setHeader("Content-Disposition", `attachment; filename="vitalyn-data-${user.id}.json"`);
   res.json({ exportedAt: new Date().toISOString(), account: publicUser(rest), profiles, appointments, notifications });
 });
 
+/** Step 1 of deleting an account: send a confirmation code to the account's mobile. */
+meRouter.post("/delete-code", async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+  if (!user?.phone) throw new HttpError(400, "This account has no mobile number");
+  if (user.role !== "USER") throw forbidden("Staff accounts are removed by the platform admin");
+  res.json(await requestOtp(user.phone, "DELETE_ACCOUNT"));
+});
+
 /**
- * "Delete my account". Profiles and notifications are erased. Bookings are kept for the
- * hospital's records but anonymised and unlinked from the person.
+ * Step 2, "Delete my account" with the code. Profiles and notifications are erased. Bookings are
+ * kept for the hospital's records but anonymised and unlinked from the person.
  */
 meRouter.delete("/", async (req, res) => {
-  const { password } = z.object({ password: z.string().min(1, "Enter your password to confirm") }).parse(req.body ?? {});
+  const { code } = z.object({ code: z.string().trim().regex(/^\d{6}$/, "Enter the 6-digit code") }).parse(req.body ?? {});
   const user = await prisma.user.findUnique({ where: { id: req.user.id } });
   if (!user) throw new HttpError(404, "Account not found");
   if (user.role !== "USER") throw forbidden("Staff accounts are removed by the platform admin");
-  if (!(await bcrypt.compare(password, user.passwordHash))) throw new HttpError(401, "Password is incorrect");
+  await verifyOtp(user.phone, "DELETE_ACCOUNT", code);
+  await endAllSessions(user.id);
 
   await prisma.$transaction([
     prisma.appointment.updateMany({
@@ -67,5 +77,6 @@ meRouter.delete("/", async (req, res) => {
     }),
     prisma.user.delete({ where: { id: user.id } }),
   ]);
+  await endSession(req, res);
   res.status(204).end();
 });
