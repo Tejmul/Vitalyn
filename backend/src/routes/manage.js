@@ -1,0 +1,278 @@
+import { Router } from "express";
+import { z } from "zod";
+import prismaPkg from "@prisma/client";
+import { prisma } from "../lib/prisma.js";
+import { forbidden, HttpError, notFound } from "../lib/http.js";
+import { assertNoBannedClaims } from "../lib/claims.js";
+import { ACTIVE_STATUSES, nowHHMMIST, todayIST } from "../lib/slots.js";
+import { logEvent, transition } from "../lib/transitions.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
+
+const { Prisma } = prismaPkg;
+
+/**
+ * Hospital front desk and doctor workspace.
+ * HOSPITAL staff see their whole hospital; DOCTOR accounts see only their own patients.
+ * Every hospital query is scoped by the hospitalId in the signed token.
+ */
+export const manageRouter = Router();
+manageRouter.use(requireAuth, requireRole("HOSPITAL", "DOCTOR"));
+
+async function scope(user) {
+  if (!user?.hospitalId) throw forbidden("Your account isn't linked to a hospital yet");
+  if (user.role === "DOCTOR") {
+    const doctor = await prisma.doctor.findUnique({ where: { userId: user.id } });
+    if (!doctor) throw forbidden("Your account isn't linked to a doctor profile yet");
+    return { hospitalId: user.hospitalId, doctorId: doctor.id };
+  }
+  return { hospitalId: user.hospitalId, doctorId: undefined };
+}
+
+/** The doctor must belong to this hospital, and a DOCTOR account may only touch itself. */
+async function ownDoctor(s, doctorId) {
+  const doc = await prisma.doctor.findUnique({ where: { id: doctorId } });
+  if (!doc || doc.hospitalId !== s.hospitalId || (s.doctorId && s.doctorId !== doc.id)) throw notFound("Doctor");
+  return doc;
+}
+
+const apptInclude = {
+  doctor: { select: { id: true, name: true, specialty: true } },
+  user: { select: { id: true, name: true, phone: true, email: true } },
+  profile: { select: { relation: true } },
+};
+
+manageRouter.get("/overview", async (req, res) => {
+  const s = await scope(req.user);
+  const base = { hospitalId: s.hospitalId, ...(s.doctorId ? { doctorId: s.doctorId } : {}) };
+  const today = todayIST();
+  const [hospital, pending, awaitingConfirm, todayConfirmed, todayArrived, upcomingEvents, doctors] = await Promise.all([
+    prisma.hospital.findUnique({ where: { id: s.hospitalId }, select: { id: true, name: true, slug: true, city: true } }),
+    prisma.appointment.count({ where: { ...base, status: "PENDING" } }),
+    prisma.appointment.count({ where: { ...base, status: "DOCTOR_APPROVED" } }),
+    prisma.appointment.count({ where: { ...base, status: "CONFIRMED", date: today } }),
+    prisma.appointment.count({ where: { ...base, status: "COMPLETED", date: today } }),
+    prisma.event.count({ where: { hospitalId: s.hospitalId, startsAt: { gte: new Date() } } }),
+    prisma.doctor.count({ where: { hospitalId: s.hospitalId } }),
+  ]);
+  res.json({
+    hospital,
+    role: req.user.role,
+    today,
+    counts: { pending, awaitingConfirm, todayConfirmed, todayArrived, upcomingEvents, doctors },
+  });
+});
+
+const STATUSES = ["PENDING", "DOCTOR_APPROVED", "CONFIRMED", "COMPLETED", "REJECTED", "CANCELLED", "NO_SHOW", "EXPIRED"];
+
+manageRouter.get("/appointments", async (req, res) => {
+  const s = await scope(req.user);
+  const q = z
+    .object({ status: z.enum(STATUSES).optional(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() })
+    .parse(req.query);
+  const appointments = await prisma.appointment.findMany({
+    where: {
+      hospitalId: s.hospitalId,
+      ...(s.doctorId ? { doctorId: s.doctorId } : {}),
+      ...(q.status ? { status: q.status } : {}),
+      ...(q.date ? { date: q.date } : {}),
+    },
+    orderBy: [{ date: "asc" }, { time: "asc" }],
+    include: apptInclude,
+    take: 300,
+  });
+  res.json({ appointments });
+});
+
+/** One button = one action. Allowed moves live in lib/transitions.js. */
+manageRouter.post("/appointments/:id/action", async (req, res) => {
+  const s = await scope(req.user);
+  const { action, note } = z
+    .object({
+      // "complete" kept as an alias of "arrive" for older clients
+      action: z.enum(["approve", "confirm", "reject", "arrive", "complete", "no_show"]).transform((a) => (a === "complete" ? "arrive" : a)),
+      note: z.string().trim().max(300).optional(),
+    })
+    .parse(req.body);
+  const updated = await prisma.$transaction((tx) =>
+    transition(tx, String(req.params.id), action, { actorId: req.user.id, role: req.user.role, note, scope: s }),
+  );
+  res.json({ appointment: await prisma.appointment.findUnique({ where: { id: updated.id }, include: apptInclude }) });
+});
+
+/** Front desk took the consultation fee. */
+manageRouter.post("/appointments/:id/paid", requireRole("HOSPITAL"), async (req, res) => {
+  const s = await scope(req.user);
+  const appt = await prisma.appointment.findUnique({ where: { id: String(req.params.id) } });
+  if (!appt || appt.hospitalId !== s.hospitalId) throw notFound("Appointment");
+  if (!["CONFIRMED", "COMPLETED"].includes(appt.status)) throw new HttpError(409, "Only confirmed visits can be marked paid");
+  if (appt.paidAt) throw new HttpError(409, "Already marked paid");
+  const updated = await prisma.$transaction(async (tx) => {
+    const u = await tx.appointment.update({ where: { id: appt.id }, data: { paidAt: new Date() }, include: apptInclude });
+    await logEvent(tx, appt.id, { action: "paid", from: appt.status, to: appt.status, actorId: req.user.id });
+    return u;
+  });
+  res.json({ appointment: updated });
+});
+
+/**
+ * A patient walks up to the desk: name + phone, the next token, same queue as online bookings.
+ * The time is "now", nudged forward a minute at a time if it collides with a booked slot.
+ */
+manageRouter.post("/walk-ins", requireRole("HOSPITAL"), async (req, res) => {
+  const s = await scope(req.user);
+  const data = z
+    .object({
+      doctorId: z.string().min(1, "Pick a doctor"),
+      name: z.string().trim().min(2, "Enter the patient's name").max(80),
+      phone: z
+        .string()
+        .trim()
+        .transform((v) => v.replace(/[\s-]/g, "").replace(/^(\+91|91)(?=\d{10}$)/, ""))
+        .pipe(z.string().regex(/^[6-9]\d{9}$/, "Enter a 10-digit mobile number"))
+        .optional()
+        .or(z.literal("").transform(() => undefined)),
+      age: z.coerce.number().int().min(0).max(120).optional(),
+    })
+    .parse(req.body);
+  const doctor = await ownDoctor(s, data.doctorId);
+  const date = todayIST();
+  let [h, m] = nowHHMMIST().split(":").map(Number);
+
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const time = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    try {
+      const appt = await prisma.$transaction(async (tx) => {
+        const last = await tx.appointment.aggregate({ where: { doctorId: doctor.id, date, tokenNumber: { not: null } }, _max: { tokenNumber: true } });
+        const a = await tx.appointment.create({
+          data: {
+            date,
+            time,
+            patientName: data.name,
+            patientAge: data.age,
+            walkIn: true,
+            walkInPhone: data.phone,
+            status: "CONFIRMED",
+            tokenNumber: (last._max.tokenNumber ?? 0) + 1,
+            doctorId: doctor.id,
+            hospitalId: s.hospitalId,
+          },
+          include: apptInclude,
+        });
+        await logEvent(tx, a.id, { action: "walk_in", to: "CONFIRMED", actorId: req.user.id });
+        return a;
+      });
+      return res.status(201).json({ appointment: appt });
+    } catch (e) {
+      if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")) throw e;
+      m += 1;
+      if (m === 60) [h, m] = [h + 1, 0];
+      if (h > 23) break;
+    }
+  }
+  throw new HttpError(409, "Couldn't find a free minute in the queue. Please try again");
+});
+
+manageRouter.get("/doctors", async (req, res) => {
+  const s = await scope(req.user);
+  const doctors = await prisma.doctor.findMany({
+    where: { hospitalId: s.hospitalId, ...(s.doctorId ? { id: s.doctorId } : {}) },
+    orderBy: { name: "asc" },
+    include: { leaves: { where: { date: { gte: todayIST() } }, orderBy: { date: "asc" } } },
+  });
+  res.json({ doctors });
+});
+
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM");
+
+/** Weekly schedule, slot length and approval mode, set by the hospital with buttons. */
+manageRouter.patch("/doctors/:id", requireRole("HOSPITAL"), async (req, res) => {
+  const s = await scope(req.user);
+  const doc = await ownDoctor(s, String(req.params.id));
+  const data = z
+    .object({
+      autoApprove: z.boolean().optional(),
+      workingDays: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+      startTime: hhmm.optional(),
+      endTime: hhmm.optional(),
+      slotMinutes: z.union([z.literal(10), z.literal(15), z.literal(20), z.literal(30)]).optional(),
+    })
+    .parse(req.body);
+  const start = data.startTime ?? doc.startTime;
+  const end = data.endTime ?? doc.endTime;
+  if (end <= start) throw new HttpError(400, "OPD end time must be after the start time");
+  if (data.workingDays) data.workingDays = [...new Set(data.workingDays)].sort();
+  res.json({ doctor: await prisma.doctor.update({ where: { id: doc.id }, data }) });
+});
+
+/**
+ * "Doctor on leave" for a date: slots disappear, and every active booking that day is
+ * cancelled with the patient notified.
+ */
+manageRouter.post("/doctors/:id/leave", async (req, res) => {
+  const s = await scope(req.user);
+  const doc = await ownDoctor(s, String(req.params.id));
+  const { date, reason } = z
+    .object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).default(todayIST()), reason: z.string().trim().max(120).optional() })
+    .parse(req.body ?? {});
+  if (date < todayIST()) throw new HttpError(400, "Pick today or a future date");
+
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.doctorLeave.upsert({
+      where: { doctorId_date: { doctorId: doc.id, date } },
+      create: { doctorId: doc.id, date, reason },
+      update: { reason },
+    });
+    const affected = await tx.appointment.findMany({
+      where: { doctorId: doc.id, date, status: { in: ACTIVE_STATUSES } },
+      select: { id: true },
+    });
+    for (const a of affected) {
+      await transition(tx, a.id, "leave", { actorId: req.user.id, role: req.user.role, note: reason ? `Doctor on leave: ${reason}` : "Doctor on leave" });
+    }
+    return affected.length;
+  });
+  res.status(201).json({ date, cancelled: result });
+});
+
+manageRouter.delete("/doctors/:id/leave/:date", async (req, res) => {
+  const s = await scope(req.user);
+  const doc = await ownDoctor(s, String(req.params.id));
+  await prisma.doctorLeave.deleteMany({ where: { doctorId: doc.id, date: String(req.params.date) } });
+  res.status(204).end();
+});
+
+manageRouter.get("/events", async (req, res) => {
+  const s = await scope(req.user);
+  const events = await prisma.event.findMany({ where: { hospitalId: s.hospitalId }, orderBy: { startsAt: "desc" } });
+  res.json({ events });
+});
+
+const eventSchema = z
+  .object({
+    title: z.string().trim().min(3).max(100),
+    description: z.string().trim().min(10).max(1000),
+    type: z.enum(["HEALTH_CAMP", "WORKSHOP", "DRIVE", "SCREENING", "TALK"]),
+    startsAt: z.coerce.date(),
+    endsAt: z.coerce.date(),
+    venue: z.string().trim().min(2).max(120),
+    isFree: z.boolean().default(true),
+    seats: z.coerce.number().int().positive().optional(),
+  })
+  .refine((e) => e.endsAt > e.startsAt, { message: "End time must be after the start", path: ["endsAt"] });
+
+manageRouter.post("/events", requireRole("HOSPITAL"), async (req, res) => {
+  const s = await scope(req.user);
+  const data = eventSchema.parse(req.body);
+  assertNoBannedClaims({ "the title": data.title, "the description": data.description });
+  const event = await prisma.event.create({ data: { ...data, hospitalId: s.hospitalId } });
+  res.status(201).json({ event });
+});
+
+manageRouter.delete("/events/:id", requireRole("HOSPITAL"), async (req, res) => {
+  const s = await scope(req.user);
+  const ev = await prisma.event.findUnique({ where: { id: String(req.params.id) } });
+  if (!ev || ev.hospitalId !== s.hospitalId) throw notFound("Event");
+  await prisma.event.delete({ where: { id: ev.id } });
+  res.status(204).end();
+});
+
