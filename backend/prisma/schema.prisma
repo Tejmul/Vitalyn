@@ -31,6 +31,7 @@ model User {
   profiles      PatientProfile[]
   notifications Notification[]
   refreshTokens RefreshToken[]
+  consents      ConsentRecord[]
 }
 
 /// One OTP sent to a phone. Only a hash of the code is stored.
@@ -102,6 +103,8 @@ model Hospital {
   // Registry identifiers checked by the platform admin
   registrationNo String?
   hfrId          String? // ABDM Health Facility Registry ID
+  // Accreditations checked by the platform admin, e.g. NABH, NABL (facts only, no "best" badges)
+  accreditations String[] @default([])
   createdAt   DateTime @default(now())
 
   doctors      Doctor[]
@@ -129,6 +132,7 @@ model Doctor {
   autoConfirm Boolean @default(true)
   // State medical council or ABDM HPR registration number, checked by the platform admin
   registrationNo String?
+  registrationVerifiedAt DateTime? // set when the platform admin has checked the registry
   // Inactive doctors disappear from booking but keep their history
   active      Boolean @default(true)
 
@@ -304,10 +308,63 @@ model Promotion {
   startsAt  DateTime
   endsAt    DateTime
   active    Boolean  @default(true)
+  // Promotions are archived, never deleted, so the record of what was sold stays (audit trail)
+  archivedAt  DateTime?
+  createdById String?
   createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
   hospitalId String
   hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+}
+
+/// Who did what in the admin console, including every view of patient data.
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String
+  action    String // e.g. users.view, application.approve, promotion.archive
+  target    String? // id of the thing acted on
+  meta      Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([actorId])
+}
+
+/// DPDP consent log: each time a person agrees to (or withdraws from) the privacy notice.
+model ConsentRecord {
+  id           String        @id @default(cuid())
+  action       ConsentAction
+  version      String // privacy notice version, e.g. 2026-11-v1
+  ageConfirmed Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+
+  // Kept after account deletion (set to null) as proof of what was agreed and when
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+}
+
+/// Personal-data breach or cyber incident. CERT-In wants a report within 6 hours of noticing,
+/// the Data Protection Board within 72 hours.
+model Incident {
+  id                 String         @id @default(cuid())
+  title              String
+  description        String
+  detectedAt         DateTime
+  affectedPeople     Int?
+  status             IncidentStatus @default(OPEN)
+  reportedToCertInAt DateTime?
+  reportedToBoardAt  DateTime?
+  peopleNotifiedAt   DateTime?
+  notes              String?
+  createdById        String
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([status])
 }
 
 enum Role {
@@ -330,6 +387,17 @@ enum AppointmentStatus {
   CANCELLED
   NO_SHOW
   EXPIRED
+}
+
+enum ConsentAction {
+  GRANTED
+  WITHDRAWN
+}
+
+enum IncidentStatus {
+  OPEN
+  REPORTED
+  CLOSED
 }
 
 enum MessageKind {

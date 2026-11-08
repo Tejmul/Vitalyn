@@ -55,6 +55,7 @@ export interface Hospital {
   imageUrl: string | null;
   registrationNo?: string | null;
   hfrId?: string | null;
+  accreditations?: string[];
   nextSlotAt?: string | null;
   distanceKm: number | null;
   etaMinutes: number | null;
@@ -77,6 +78,7 @@ export interface Doctor {
   slotMinutes: number;
   autoConfirm: boolean;
   registrationNo: string | null;
+  registrationVerifiedAt?: string | null;
   active: boolean;
   leaveDates?: string[];
   leaves?: { id: string; date: string; reason: string | null }[];
@@ -124,6 +126,7 @@ export interface Promotion {
   startsAt: string;
   endsAt: string;
   active: boolean;
+  archivedAt?: string | null;
   hospital: { id: string; name: string; city: string; slug: string };
 }
 

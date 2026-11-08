@@ -45,7 +45,7 @@ Vitalyn has four kinds of users. Everything is done with buttons, because the pe
 | **Patient** | Find hospitals nearest first (GPS, city, area or PIN code), see distance, travel time and the next free slot, book a slot in three taps, book for up to 6 family members, move or cancel a booking, follow each approval step, see the token, get in-app updates, download or delete their data |
 | **Hospital desk** | Add and edit **doctors** (with council/HPR registration number), work from a **Today** queue sorted by token, approve / confirm / reject (with a one-tap reason), mark **Arrived**, **Didn't come** or **Paid**, add a **walk-in** in two taps, set each doctor's OPD days and hours, mark a doctor **on leave**, post health camps and events |
 | **Doctor** | See only their own patients, accept or reject requests (when not on auto-confirm), mark themselves on leave |
-| **Platform admin** | Review **hospital applications** from /list-your-hospital, run **sponsored hospital** promotions (with priority, dates and pause), verify hospitals and record their registration and ABDM HFR IDs, see bookings, cancellations, no-shows and expiries per hospital |
+| **Platform admin** | Review **hospital applications** from /list-your-hospital, verify accreditations and doctor registration numbers, keep the **audit** and **incident** logs, run **sponsored hospital** promotions (with priority, dates and pause), verify hospitals and record their registration and ABDM HFR IDs, see bookings, cancellations, no-shows and expiries per hospital |
 
 ## Screenshots
 
@@ -239,10 +239,14 @@ Base URL `/api`. Authenticated routes need `Authorization: Bearer <token>`. Erro
 |---|---|---|
 | GET | `/admin/overview` | platform totals |
 | GET | `/admin/hospitals` | per-hospital bookings, arrivals, cancellations, no-shows, expiries |
-| PATCH | `/admin/hospitals/:id` | verify, registration number, ABDM HFR ID |
+| PATCH | `/admin/hospitals/:id` | verify, registration number, ABDM HFR ID, accreditations (NABH/NABL/JCI) |
+| GET | `/admin/hospitals/:id/doctors` | doctors with registration numbers |
+| PATCH | `/admin/doctors/:id` | mark a doctor's registration number verified (or not) |
+| GET | `/admin/audit` | admin audit log |
+| GET / POST / PATCH | `/admin/incidents` | breach and incident log with reporting clocks |
 | GET | `/admin/users` | recent sign-ups |
 | GET / POST | `/admin/promotions` | list, create |
-| PATCH / DELETE | `/admin/promotions/:id` | pause, resume, priority, delete |
+| PATCH / DELETE | `/admin/promotions/:id` | pause, resume, priority; DELETE archives (record kept) |
 
 </details>
 
@@ -265,6 +269,10 @@ Built with India's Digital Personal Data Protection Act, 2023 in mind:
 - A hospital only sees its own bookings; a doctor only sees their own patients.
 - Every booking change is written to an audit log.
 - Sessions use a 15-minute access token kept in memory and a rotating httpOnly refresh cookie. Reusing an old refresh token logs out every session.
+- **Consent log:** every agreement to the privacy notice (with its version and the 18+ confirmation) and every withdrawal is recorded. The record outlives a deleted account, without the person's name or number.
+- **Admin audit log:** every admin decision and every view of patient data is logged (who, what, when, from where). Phone numbers are masked in admin lists.
+- **Incident log:** admins log breaches and cyber incidents and see the CERT-In (6 hours) and Data Protection Board (72 hours) reporting clocks, counted from detection.
+- **Trust badges are facts only:** NABH/NABL/JCI accreditation and doctor registration numbers are shown only after the platform admin checks them. Promotions are archived, never deleted, so the record of what was sold stays.
 - We collect the minimum: name, age, gender, relation, and an optional reason for visit.
 
 The full research behind these choices (15 apps compared, Indian regulations, monetisation, roadmap) is in [`docs/research`](docs/research/india-hospital-booking-research.pdf).
@@ -302,6 +310,11 @@ Vitalyn/
 | Frontend | Vercel (Mumbai region) or any Node host | `NEXT_PUBLIC_API_URL` pointing at the API |
 
 The expiry job runs inside the API process. With more than one API instance, move it to a single worker.
+
+## Open items
+
+- **Inactive-account erasure.** The DPDP Rules' Third Schedule sets erasure periods for certain classes of data fiduciary (with a 48-hour warning). Which class applies to Vitalyn, and so which period, needs a decision with counsel before automating it.
+- **Log retention.** CERT-In asks for 180 days of system logs kept in India; that is a hosting setting (log storage), not app code.
 
 ## Roadmap
 

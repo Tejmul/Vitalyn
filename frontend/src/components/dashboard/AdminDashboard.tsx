@@ -1,8 +1,9 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { Minus, Plus, Trash2 } from "lucide-react";
+import { Archive, BadgeCheck, Minus, Plus } from "lucide-react";
 import { api } from "@/lib/api";
+import { useApi } from "@/lib/useApi";
 import type { Promotion } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -10,6 +11,8 @@ import { ErrorNote, Field, inputClass } from "@/components/ui/Field";
 import { Panel, Segmented, Stat } from "./bits";
 import { Applications } from "./Applications";
 import { Messages } from "./Messages";
+import { Incidents } from "./Incidents";
+import { AuditLog } from "./AuditLog";
 
 type Overview = { counts: { users: number; hospitals: number; doctors: number; appointments: number; pending: number; activePromotions: number; applications: number } };
 type AdminHospital = {
@@ -20,6 +23,7 @@ type AdminHospital = {
   verified: boolean;
   registrationNo: string | null;
   hfrId: string | null;
+  accreditations: string[];
   _count: { doctors: number; appointments: number; events: number };
   stats: { cancelled: number; noShow: number; expired: number; arrived: number };
 };
@@ -38,7 +42,7 @@ function promoState(p: Promotion) {
 
 export function AdminDashboard() {
   const [ov, setOv] = useState<Overview | null>(null);
-  const [tab, setTab] = useState<"applications" | "promotions" | "hospitals" | "messages" | "users">("promotions");
+  const [tab, setTab] = useState<"applications" | "promotions" | "hospitals" | "messages" | "users" | "audit" | "incidents">("promotions");
 
   const loadOv = useCallback(() => {
     api<Overview>("/admin/overview").then(setOv).catch(() => {});
@@ -67,6 +71,8 @@ export function AdminDashboard() {
           { value: "promotions", label: "Promotions" },
           { value: "hospitals", label: "Hospitals" },
           { value: "messages", label: "Text messages" },
+          { value: "incidents", label: "Incidents" },
+          { value: "audit", label: "Audit log" },
           { value: "users", label: "Users" },
         ]}
       />
@@ -74,6 +80,8 @@ export function AdminDashboard() {
       {tab === "promotions" && <Promotions onChange={loadOv} />}
       {tab === "hospitals" && <Hospitals />}
       {tab === "messages" && <Messages />}
+      {tab === "incidents" && <Incidents />}
+      {tab === "audit" && <AuditLog />}
       {tab === "users" && <Users />}
     </div>
   );
@@ -101,7 +109,7 @@ function Promotions({ onChange }: { onChange: () => void }) {
   };
 
   const remove = async (id: string) => {
-    if (!window.confirm("Delete this promotion?")) return;
+    if (!window.confirm("Archive this promotion? It stops showing to patients; its record is kept.")) return;
     await api(`/admin/promotions/${id}`, { method: "DELETE" }).catch((e: Error) => setError(e.message));
     load();
     onChange();
@@ -133,9 +141,9 @@ function Promotions({ onChange }: { onChange: () => void }) {
         {error && <ErrorNote>{error}</ErrorNote>}
         <ul className="space-y-3">
           {(promos ?? []).map((p) => {
-            const s = promoState(p);
+            const s = p.archivedAt ? { label: "Archived", tone: "grey" as const } : promoState(p);
             return (
-              <li key={p.id} className="flex flex-col gap-3 rounded-[18px] bg-[#fafbfe] p-4 ring-1 ring-line sm:flex-row sm:items-center">
+              <li key={p.id} className={`flex flex-col gap-3 rounded-[18px] bg-[#fafbfe] p-4 ring-1 ring-line sm:flex-row sm:items-center ${p.archivedAt ? "opacity-60" : ""}`}>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-[15.5px] font-semibold">{p.hospital.name}</p>
@@ -150,6 +158,9 @@ function Promotions({ onChange }: { onChange: () => void }) {
                     {new Date(p.startsAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} → {new Date(p.endsAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} · {p.hospital.city}
                   </p>
                 </div>
+                {p.archivedAt ? (
+                  <span className="text-[12.5px] text-muted">Archived {new Date(p.archivedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} · record kept</span>
+                ) : (
                 <div className="flex items-center gap-2">
                   <span className="flex items-center rounded-full bg-white ring-1 ring-line">
                     <button className="grid size-9 place-items-center rounded-full hover:bg-mist disabled:opacity-30" onClick={() => patch(p.id, { priority: p.priority - 1 })} disabled={p.priority <= 1} aria-label="Lower priority">
@@ -163,10 +174,11 @@ function Promotions({ onChange }: { onChange: () => void }) {
                   <Button size="sm" className="h-9" variant={p.active ? "secondary" : "primary"} onClick={() => patch(p.id, { active: !p.active })}>
                     {p.active ? "Pause" : "Resume"}
                   </Button>
-                  <button onClick={() => remove(p.id)} className="grid size-9 place-items-center rounded-full text-muted hover:bg-rose/8 hover:text-rose" aria-label="Delete promotion">
-                    <Trash2 className="size-4" />
+                  <button onClick={() => remove(p.id)} className="grid size-9 place-items-center rounded-full text-muted hover:bg-mist hover:text-ink" aria-label="Archive promotion" title="Archive">
+                    <Archive className="size-4" />
                   </button>
                 </div>
+                )}
               </li>
             );
           })}
@@ -217,16 +229,60 @@ function Promotions({ onChange }: { onChange: () => void }) {
   );
 }
 
+const ACCREDITATIONS = ["NABH", "NABL", "JCI"];
+
+type AdminDoctor = { id: string; name: string; specialty: string; qualification: string; registrationNo: string | null; registrationVerifiedAt: string | null; active: boolean };
+
+function DoctorChecks({ hospitalId }: { hospitalId: string }) {
+  const req = useApi<{ doctors: AdminDoctor[] }>(`/admin/hospitals/${hospitalId}/doctors`);
+  const [busy, setBusy] = useState<string | null>(null);
+  const toggle = async (d: AdminDoctor) => {
+    setBusy(d.id);
+    await api(`/admin/doctors/${d.id}`, { method: "PATCH", body: { verified: !d.registrationVerifiedAt } }).catch(() => {});
+    setBusy(null);
+    req.reload();
+  };
+  const docs = req.data?.doctors ?? [];
+  return (
+    <div className="mt-3">
+      <p className="text-[13px] font-semibold text-ink-2">Doctors · check each council / HPR number against the registry</p>
+      {docs.length === 0 ? (
+        <p className="mt-1 text-[13px] text-muted">No doctors added yet.</p>
+      ) : (
+        <ul className="mt-2 divide-y divide-line rounded-xl bg-white ring-1 ring-line">
+          {docs.map((d) => (
+            <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
+              <span className="text-[13.5px]">
+                <b>{d.name}</b> <span className="text-muted">· {d.specialty}</span> <span className="font-mono text-[12.5px] text-muted">{d.registrationNo ?? "no reg. no."}</span>
+              </span>
+              <Button size="sm" variant={d.registrationVerifiedAt ? "success" : "secondary"} onClick={() => toggle(d)} loading={busy === d.id} disabled={!d.registrationNo}>
+                {d.registrationVerifiedAt ? (
+                  <>
+                    <BadgeCheck className="size-4" /> Verified
+                  </>
+                ) : (
+                  "Mark verified"
+                )}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function RegistryEditor({ h, onSaved }: { h: AdminHospital; onSaved: () => void }) {
   const [reg, setReg] = useState(h.registrationNo ?? "");
   const [hfr, setHfr] = useState(h.hfrId ?? "");
+  const [acc, setAcc] = useState<string[]>(h.accreditations ?? []);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const save = async () => {
     setBusy(true);
     setError(null);
     try {
-      await api(`/admin/hospitals/${h.id}`, { method: "PATCH", body: { registrationNo: reg || null, hfrId: hfr } });
+      await api(`/admin/hospitals/${h.id}`, { method: "PATCH", body: { registrationNo: reg || null, hfrId: hfr, accreditations: acc } });
       onSaved();
     } catch (e) {
       setError((e as Error).message);
@@ -235,21 +291,35 @@ function RegistryEditor({ h, onSaved }: { h: AdminHospital; onSaved: () => void 
     }
   };
   return (
-    <div className="grid gap-2 rounded-2xl bg-mist p-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-      <Field label="State registration no.">
-        <input className={inputClass} value={reg} onChange={(e) => setReg(e.target.value)} placeholder="GJ/AMC/CEA/2019/0412" />
-      </Field>
-      <Field label="ABDM HFR ID">
-        <input className={inputClass} value={hfr} onChange={(e) => setHfr(e.target.value)} placeholder="IN2410000187" />
-      </Field>
-      <Button onClick={save} loading={busy} className="h-12">
-        Save
-      </Button>
+    <div className="rounded-2xl bg-mist p-3">
+      <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+        <Field label="State registration no.">
+          <input className={inputClass} value={reg} onChange={(e) => setReg(e.target.value)} placeholder="GJ/AMC/CEA/2019/0412" />
+        </Field>
+        <Field label="ABDM HFR ID">
+          <input className={inputClass} value={hfr} onChange={(e) => setHfr(e.target.value)} placeholder="IN2410000187" />
+        </Field>
+        <Button onClick={save} loading={busy} className="h-12">
+          Save
+        </Button>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="text-[13px] font-semibold text-ink-2">Accreditations (checked):</span>
+        {ACCREDITATIONS.map((a) => {
+          const on = acc.includes(a);
+          return (
+            <button key={a} type="button" onClick={() => setAcc((x) => (on ? x.filter((v) => v !== a) : [...x, a]))} aria-pressed={on} className={`h-8 rounded-full px-3 text-[12.5px] font-semibold ${on ? "bg-signal text-white" : "bg-white text-ink-2 ring-1 ring-line"}`}>
+              {a}
+            </button>
+          );
+        })}
+      </div>
       {error && (
-        <div className="sm:col-span-3">
+        <div className="mt-2">
           <ErrorNote>{error}</ErrorNote>
         </div>
       )}
+      <DoctorChecks hospitalId={h.id} />
     </div>
   );
 }
@@ -299,6 +369,7 @@ function Hospitals() {
                   <td className="py-3">
                     <button onClick={() => setEditing(editing === h.id ? null : h.id)} className="text-left text-[12.5px] hover:text-blue">
                       {h.hfrId ? <span className="font-mono">{h.hfrId}</span> : <span className="font-semibold text-amber">Add IDs</span>}
+                      {h.accreditations?.length > 0 && <span className="block font-semibold text-signal">{h.accreditations.join(" · ")}</span>}
                       {h.registrationNo && <span className="block text-muted">{h.registrationNo}</span>}
                     </button>
                   </td>
