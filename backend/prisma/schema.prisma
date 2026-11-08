@@ -14,7 +14,7 @@ model User {
   email        String   @unique
   username     String   @unique
   phone        String?  @unique
-  passwordHash String
+  passwordHash String? // null for phone-OTP accounts
   name         String
   role         Role     @default(USER)
   // DPDP: when and to which notice version the user consented
@@ -97,6 +97,10 @@ model Doctor {
   slotMinutes Int     @default(15)
   // When true, bookings skip doctor approval (hospital still confirms)
   autoApprove Boolean @default(false)
+  // State medical council or ABDM HPR registration number, checked by the platform admin
+  registrationNo String?
+  // Inactive doctors disappear from booking but keep their history
+  active      Boolean @default(true)
 
   hospitalId String
   hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
@@ -105,6 +109,39 @@ model Doctor {
 
   appointments Appointment[]
   leaves       DoctorLeave[]
+}
+
+/// A hospital asking to join. The platform admin verifies it before it goes live.
+model HospitalApplication {
+  id             String            @id @default(cuid())
+  status         ApplicationStatus @default(PENDING)
+  hospitalName   String
+  description    String
+  address        String
+  city           String
+  state          String
+  pincode        String
+  phone          String
+  lat            Float
+  lng            Float
+  specialties    String[]
+  beds           Int?
+  emergency24x7  Boolean           @default(false)
+  registrationNo String
+  hfrId          String?
+  // The person who will run the hospital's Vitalyn desk account
+  contactName    String
+  contactEmail   String
+  contactPhone   String // the desk logs in with this number by OTP
+  consentAt      DateTime
+  reviewNote     String?
+  reviewedAt     DateTime?
+  reviewedById   String?
+  hospitalId     String?           @unique
+  createdAt      DateTime          @default(now())
+
+  @@index([status])
+  @@index([contactEmail])
 }
 
 /// A day the doctor is not seeing patients. Slots that day disappear.
@@ -237,6 +274,12 @@ enum AppointmentStatus {
   CANCELLED
   NO_SHOW
   EXPIRED
+}
+
+enum ApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum Gender {
