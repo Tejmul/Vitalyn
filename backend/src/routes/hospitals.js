@@ -21,7 +21,7 @@ function withDistance(h, lat, lng) {
 
 const activePromo = () => {
   const now = new Date();
-  return { active: true, startsAt: { lte: now }, endsAt: { gte: now } };
+  return { active: true, archivedAt: null, startsAt: { lte: now }, endsAt: { gte: now } };
 };
 
 /**
