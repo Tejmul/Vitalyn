@@ -18,7 +18,8 @@ export function createApp() {
   const app = express();
   app.set("trust proxy", 1);
   app.use(helmet());
-  app.use(cors({ origin: config.corsOrigins }));
+  // credentials: true lets the browser send the httpOnly refresh cookie
+  app.use(cors({ origin: config.corsOrigins, credentials: true }));
   app.use(express.json({ limit: "100kb" }));
   if (!config.isProd) app.use(morgan("dev"));
   app.get("/api/health", (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
