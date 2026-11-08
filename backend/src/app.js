@@ -11,6 +11,7 @@ import { manageRouter } from "./routes/manage.js";
 import { adminRouter } from "./routes/admin.js";
 import { profilesRouter } from "./routes/profiles.js";
 import { meRouter } from "./routes/me.js";
+import { onboardingRouter } from "./routes/onboarding.js";
 import { errorHandler, notFoundHandler } from "./middleware/error.js";
 
 export function createApp() {
@@ -29,6 +30,7 @@ export function createApp() {
   app.use("/api/admin", adminRouter);
   app.use("/api/profiles", profilesRouter);
   app.use("/api/me", meRouter);
+  app.use("/api/onboarding", onboardingRouter);
   app.use(notFoundHandler);
   app.use(errorHandler);
   return app;
