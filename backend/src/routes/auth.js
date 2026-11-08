@@ -1,86 +1,104 @@
 import { Router } from "express";
-import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
+import { config } from "../config.js";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../lib/http.js";
+import { requestOtp, verifyOtp } from "../lib/otp.js";
+import { indianMobile } from "../lib/schemas.js";
 import { publicUser } from "../lib/serialize.js";
-import { requireAuth, signToken } from "../middleware/auth.js";
+import { endSession, rotateSession, startSession } from "../lib/session.js";
+import { requireAuth } from "../middleware/auth.js";
 
+/**
+ * Phone OTP is the only way in, for every role:
+ *   1. POST /otp/request  { phone }          → code sent by SMS
+ *   2. POST /otp/verify   { phone, code }    → session, or { needsProfile, signupToken } for a new number
+ *   3. POST /complete-profile { signupToken, name, email?, consent, adult } → account + session
+ */
 export const authRouter = Router();
 
-const registerSchema = z.object({
-  name: z.string().trim().min(2, "Enter your full name").max(80),
-  email: z.email("Enter a valid email").trim().toLowerCase(),
-  username: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .regex(/^[a-z0-9_.]{3,24}$/, "3–24 letters, numbers, _ or ."),
-  // Indian mobile: optional for now, 10 digits starting 6–9 (with or without +91)
-  phone: z
-    .string()
-    .trim()
-    .transform((v) => v.replace(/[\s-]/g, "").replace(/^(\+91|91)(?=\d{10}$)/, ""))
-    .pipe(z.string().regex(/^[6-9]\d{9}$/, "Enter a 10-digit mobile number"))
-    .optional()
-    .or(z.literal("").transform(() => undefined)),
-  password: z.string().min(8, "Use at least 8 characters").max(72),
-  // DPDP Act: the user must agree to the privacy notice before we store their data
-  consent: z.literal(true, { error: "Please agree to the privacy notice to continue" }),
+/** Per-IP guard on top of the per-number limits in lib/otp.js. */
+const otpLimiter = rateLimit({
+  windowMs: 10 * 60_000,
+  limit: 30,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  handler: (_req, res) => res.status(429).json({ error: "Too many attempts from this network. Please wait a few minutes" }),
 });
 
 /** Bump when the privacy notice text changes, so we know what each user agreed to. */
 export const CONSENT_VERSION = "2026-11-v1";
 
-authRouter.post("/register", async (req, res) => {
-  const data = registerSchema.parse(req.body);
-  const clash = await prisma.user.findFirst({
-    where: {
-      OR: [
-        { email: data.email },
-        { username: data.username },
-        ...(data.phone ? [{ phone: data.phone }] : []),
-      ],
-    },
-  });
-  if (clash) {
-    const field =
-      clash.email === data.email ? "email" : clash.username === data.username ? "username" : "phone number";
-    throw new HttpError(409, `An account with this ${field} already exists`);
+authRouter.post("/otp/request", otpLimiter, async (req, res) => {
+  const { phone } = z.object({ phone: indianMobile }).parse(req.body);
+  res.json(await requestOtp(phone, "LOGIN"));
+});
+
+authRouter.post("/otp/verify", otpLimiter, async (req, res) => {
+  const { phone, code } = z
+    .object({ phone: indianMobile, code: z.string().trim().regex(/^\d{6}$/, "Enter the 6-digit code") })
+    .parse(req.body);
+  await verifyOtp(phone, "LOGIN", code);
+
+  const user = await prisma.user.findUnique({ where: { phone } });
+  if (user) {
+    const accessToken = await startSession(req, res, user);
+    return res.json({ accessToken, user: publicUser(user) });
   }
+  // New number: prove it was verified for the next step, without creating an account yet.
+  const signupToken = jwt.sign({ phone, typ: "signup" }, config.jwtSecret, { expiresIn: "15m" });
+  res.json({ needsProfile: true, signupToken });
+});
+
+authRouter.post("/complete-profile", async (req, res) => {
+  const data = z
+    .object({
+      signupToken: z.string().min(10),
+      name: z.string().trim().min(2, "Enter your full name").max(80),
+      email: z.email("Enter a valid email").trim().toLowerCase().optional().or(z.literal("").transform(() => undefined)),
+      // DPDP Act: notice + consent before we store anything
+      consent: z.literal(true, { error: "Please agree to the privacy notice to continue" }),
+      // Children are booked for by a parent from the parent's account
+      adult: z.literal(true, { error: "You must be 18 or older to create an account. A parent can book for you" }),
+    })
+    .parse(req.body);
+
+  let phone;
+  try {
+    const payload = jwt.verify(data.signupToken, config.jwtSecret);
+    if (payload.typ !== "signup") throw new Error("wrong token");
+    phone = payload.phone;
+  } catch {
+    throw new HttpError(401, "This sign-up link has expired. Please verify your number again");
+  }
+
+  if (await prisma.user.findUnique({ where: { phone } })) throw new HttpError(409, "This number already has an account. Please log in");
+  if (data.email && (await prisma.user.findUnique({ where: { email: data.email } }))) throw new HttpError(409, "That email is already used by another account");
+
   const user = await prisma.user.create({
     data: {
+      phone,
       name: data.name,
       email: data.email,
-      username: data.username,
-      phone: data.phone,
-      passwordHash: await bcrypt.hash(data.password, 12),
       consentAt: new Date(),
       consentVersion: CONSENT_VERSION,
-      // Everyone starts with a "Self" profile; family members are added later
       profiles: { create: { name: data.name, relation: "Self" } },
     },
   });
-  res.status(201).json({ token: signToken(user), user: publicUser(user) });
+  const accessToken = await startSession(req, res, user);
+  res.status(201).json({ accessToken, user: publicUser(user) });
 });
 
-const loginSchema = z.object({
-  // Email today; username and phone also work so the UI can add them later.
-  identifier: z.string().trim().min(3, "Enter your email"),
-  password: z.string().min(1, "Enter your password"),
+authRouter.post("/refresh", async (req, res) => {
+  const { accessToken, user } = await rotateSession(req, res);
+  res.json({ accessToken, user: publicUser(user) });
 });
 
-authRouter.post("/login", async (req, res) => {
-  const { identifier, password } = loginSchema.parse(req.body);
-  const id = identifier.toLowerCase();
-  const user = await prisma.user.findFirst({
-    where: { OR: [{ email: id }, { username: id }, { phone: id.replace(/^\+91/, "") }] },
-  });
-  // Same message either way so we don't reveal which accounts exist.
-  if (!user || !user.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
-    throw new HttpError(401, "Email or password is incorrect");
-  }
-  res.json({ token: signToken(user), user: publicUser(user) });
+authRouter.post("/logout", async (req, res) => {
+  await endSession(req, res);
+  res.status(204).end();
 });
 
 authRouter.get("/me", requireAuth, async (req, res) => {
