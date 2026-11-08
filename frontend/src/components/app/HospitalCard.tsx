@@ -60,8 +60,14 @@ export function HospitalCard({ h, showHighlight }: { h: Hospital; showHighlight?
             </Link>
           </h3>
           <span className="flex shrink-0 items-center gap-1 text-[13.5px] font-semibold text-ink">
-            <Star className="size-3.5 fill-amber text-amber" />
-            {h.rating.toFixed(1)}
+            {h.reviewCount > 0 ? (
+              <>
+                <Star className="size-3.5 fill-amber text-amber" />
+                {h.rating.toFixed(1)}
+              </>
+            ) : (
+              <span className="rounded-full bg-sky px-2 py-0.5 text-[11.5px] text-blue">New</span>
+            )}
           </span>
         </div>
         <p className="mt-1 text-[13.5px] text-muted">
