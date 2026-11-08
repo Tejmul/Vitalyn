@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+/*
+ * Vitalyn design tokens
+ * White paper, deep ink, one confident blue. Status colours are used only for status.
+ */
+:root {
+  --paper: #ffffff;
+  --mist: #f4f7fd;
+  --ink: #0a1630;
+  --ink-2: #26324d;
+  --muted: #5a6785;
+  --line: rgba(10, 22, 48, 0.09);
+  --blue: #1645f5;
+  --blue-deep: #0b2fb8;
+  --sky: #e3eaff;
+  --grid: rgba(22, 69, 245, 0.07);
+  --signal: #0e9f6e;
+  --amber: #c97a06;
+  --rose: #d93a3f;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-mist: var(--mist);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-blue: var(--blue);
+  --color-blue-deep: var(--blue-deep);
+  --color-sky: var(--sky);
+  --color-signal: var(--signal);
+  --color-amber: var(--amber);
+  --color-rose: var(--rose);
+
+  --font-display: var(--font-schibsted), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+  --font-deva: var(--font-tiro), serif;
+
+  --ease-out-expo: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--blue);
+  color: white;
+}
+
+:focus-visible {
+  outline: 2.5px solid var(--blue);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+/* ECG paper: the hero's backdrop. 5 mm minor / 25 mm major squares, in faint blue. */
+.ecg-paper {
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+    linear-gradient(rgba(22, 69, 245, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(22, 69, 245, 0.035) 1px, transparent 1px);
+  background-size:
+    120px 120px,
+    120px 120px,
+    24px 24px,
+    24px 24px;
+}
+
+.marquee-track {
+  animation: marquee 38s linear infinite;
+}
+.marquee:hover .marquee-track {
+  animation-play-state: paused;
+}
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes live-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+.live-ping {
+  animation: live-ping 1.6s var(--ease-out) infinite;
+}
+
+/* Lenis */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
