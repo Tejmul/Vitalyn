@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { HttpError, notFound } from "../lib/http.js";
 import { toneFor, uniqueSlug } from "../lib/slug.js";
+import { audit, maskPhone } from "../lib/audit.js";
 import { assertNoBannedClaims } from "../lib/claims.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -19,7 +20,7 @@ adminRouter.get("/overview", async (_req, res) => {
     prisma.doctor.count(),
     prisma.appointment.count(),
     prisma.appointment.count({ where: { status: { in: ["PENDING", "DOCTOR_APPROVED"] } } }), // waiting for approval
-    prisma.promotion.count({ where: { active: true, startsAt: { lte: now }, endsAt: { gte: now } } }),
+    prisma.promotion.count({ where: { active: true, archivedAt: null, startsAt: { lte: now }, endsAt: { gte: now } } }),
     prisma.appointment.groupBy({ by: ["status"], _count: { _all: true } }),
     prisma.hospitalApplication.count({ where: { status: "PENDING" } }),
   ]);
@@ -57,6 +58,7 @@ adminRouter.patch("/hospitals/:id", async (req, res) => {
     .object({
       verified: z.boolean().optional(),
       registrationNo: z.string().trim().max(60).optional().nullable(),
+      accreditations: z.array(z.enum(["NABH", "NABL", "JCI"])).max(3).optional(),
       // ABDM Health Facility Registry IDs look like IN0610000123
       hfrId: z
         .string()
@@ -70,29 +72,25 @@ adminRouter.patch("/hospitals/:id", async (req, res) => {
     .parse(req.body);
   const h = await prisma.hospital.findUnique({ where: { id: String(req.params.id) } });
   if (!h) throw notFound("Hospital");
-  res.json({ hospital: await prisma.hospital.update({ where: { id: h.id }, data }) });
+  const hospital = await prisma.hospital.update({ where: { id: h.id }, data });
+  await audit(prisma, req, "hospital.update", { target: h.id, meta: data });
+  res.json({ hospital });
 });
 
-adminRouter.get("/users", async (_req, res) => {
+/** Recent sign-ups. Viewing patient data is logged, and numbers are masked. */
+adminRouter.get("/users", async (req, res) => {
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },
     take: 100,
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      phone: true,
-      role: true,
-      createdAt: true,
-      hospital: { select: { name: true } },
-    },
+    select: { id: true, name: true, email: true, phone: true, role: true, createdAt: true, hospital: { select: { name: true } } },
   });
-  res.json({ users });
+  await audit(prisma, req, "users.view", { meta: { count: users.length } });
+  res.json({ users: users.map((u) => ({ ...u, phone: maskPhone(u.phone) })) });
 });
 
 adminRouter.get("/promotions", async (_req, res) => {
   const promotions = await prisma.promotion.findMany({
-    orderBy: [{ active: "desc" }, { priority: "desc" }],
+    orderBy: [{ archivedAt: { sort: "asc", nulls: "first" } }, { active: "desc" }, { priority: "desc" }],
     include: { hospital: { select: { id: true, name: true, city: true, slug: true } } },
   });
   res.json({ promotions });
@@ -113,9 +111,10 @@ adminRouter.post("/promotions", async (req, res) => {
   const data = promoSchema.parse(req.body);
   assertNoBannedClaims({ "the campaign name": data.title, "the line patients see": data.highlight });
   const promotion = await prisma.promotion.create({
-    data,
+    data: { ...data, createdById: req.user.id },
     include: { hospital: { select: { id: true, name: true, city: true, slug: true } } },
   });
+  await audit(prisma, req, "promotion.create", { target: promotion.id, meta: { hospitalId: data.hospitalId, startsAt: data.startsAt, endsAt: data.endsAt, priority: data.priority } });
   res.status(201).json({ promotion });
 });
 
@@ -125,19 +124,24 @@ adminRouter.patch("/promotions/:id", async (req, res) => {
     .parse(req.body);
   const p = await prisma.promotion.findUnique({ where: { id: String(req.params.id) } });
   if (!p) throw notFound("Promotion");
-  res.json({
-    promotion: await prisma.promotion.update({
-      where: { id: p.id },
-      data,
-      include: { hospital: { select: { id: true, name: true, city: true, slug: true } } },
-    }),
+  if (p.archivedAt) throw new HttpError(409, "Archived promotions can't be changed");
+  const promotion = await prisma.promotion.update({
+    where: { id: p.id },
+    data,
+    include: { hospital: { select: { id: true, name: true, city: true, slug: true } } },
   });
+  await audit(prisma, req, "promotion.update", { target: p.id, meta: data });
+  res.json({ promotion });
 });
 
+/** "Delete" archives: the promotion stops showing, but its record (dates, placement, who) is kept. */
 adminRouter.delete("/promotions/:id", async (req, res) => {
   const p = await prisma.promotion.findUnique({ where: { id: String(req.params.id) } });
   if (!p) throw notFound("Promotion");
-  await prisma.promotion.delete({ where: { id: p.id } });
+  if (!p.archivedAt) {
+    await prisma.promotion.update({ where: { id: p.id }, data: { archivedAt: new Date(), active: false } });
+    await audit(prisma, req, "promotion.archive", { target: p.id });
+  }
   res.status(204).end();
 });
 
@@ -207,6 +211,7 @@ adminRouter.post("/applications/:id/approve", async (req, res) => {
     });
     return { hospital: { id: hospital.id, slug: hospital.slug, name: hospital.name }, deskLogin: user.phone };
   });
+  await audit(prisma, req, "application.approve", { target: app.id, meta: { hospitalId: result.hospital.id } });
   res.json(result);
 });
 
@@ -219,6 +224,7 @@ adminRouter.post("/applications/:id/reject", async (req, res) => {
     where: { id: app.id },
     data: { status: "REJECTED", reviewNote: note, reviewedAt: new Date(), reviewedById: req.user.id },
   });
+  await audit(prisma, req, "application.reject", { target: app.id, meta: { note } });
   res.json({ application: updated });
 });
 
@@ -251,4 +257,76 @@ adminRouter.get("/messages", async (_req, res) => {
     // Mask numbers in admin lists (DPDP: show only what's needed)
     problems: problems.map((p) => ({ ...p, phone: `${p.phone.slice(0, 2)}******${p.phone.slice(-2)}` })),
   });
+});
+
+/* ---------------- Doctor registration checks ---------------- */
+
+adminRouter.get("/hospitals/:id/doctors", async (req, res) => {
+  const doctors = await prisma.doctor.findMany({
+    where: { hospitalId: String(req.params.id) },
+    orderBy: [{ active: "desc" }, { name: "asc" }],
+    select: { id: true, name: true, specialty: true, qualification: true, registrationNo: true, registrationVerifiedAt: true, active: true },
+  });
+  res.json({ doctors });
+});
+
+/** Mark a doctor's council/HPR number as checked against the registry (or undo). */
+adminRouter.patch("/doctors/:id", async (req, res) => {
+  const { verified } = z.object({ verified: z.boolean() }).parse(req.body);
+  const d = await prisma.doctor.findUnique({ where: { id: String(req.params.id) } });
+  if (!d) throw notFound("Doctor");
+  if (verified && !d.registrationNo) throw new HttpError(400, "This doctor has no registration number to verify");
+  const doctor = await prisma.doctor.update({ where: { id: d.id }, data: { registrationVerifiedAt: verified ? new Date() : null } });
+  await audit(prisma, req, verified ? "doctor.verify" : "doctor.unverify", { target: d.id, meta: { registrationNo: d.registrationNo } });
+  res.json({ doctor });
+});
+
+/* ---------------- Audit log ---------------- */
+
+adminRouter.get("/audit", async (_req, res) => {
+  const entries = await prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 100 });
+  const actors = await prisma.user.findMany({ where: { id: { in: [...new Set(entries.map((e) => e.actorId))] } }, select: { id: true, name: true } });
+  const name = Object.fromEntries(actors.map((a) => [a.id, a.name]));
+  res.json({ entries: entries.map((e) => ({ ...e, actorName: name[e.actorId] ?? "Deleted user" })) });
+});
+
+/* ---------------- Incidents (breach log) ---------------- */
+
+/** CERT-In: report cyber incidents within 6 hours of noticing. DPDP Board: personal-data breaches within 72 hours. */
+export const INCIDENT_DEADLINES = { certInHours: 6, boardHours: 72 };
+
+adminRouter.get("/incidents", async (_req, res) => {
+  const incidents = await prisma.incident.findMany({ orderBy: [{ status: "asc" }, { detectedAt: "desc" }], take: 100 });
+  res.json({ incidents, deadlines: INCIDENT_DEADLINES });
+});
+
+adminRouter.post("/incidents", async (req, res) => {
+  const data = z
+    .object({
+      title: z.string().trim().min(5, "Describe it in a few words").max(120),
+      description: z.string().trim().min(10, "Say what happened and what data was involved").max(2000),
+      detectedAt: z.coerce.date().refine((d) => d.getTime() <= Date.now() + 60_000, "Detection time can't be in the future"),
+      affectedPeople: z.coerce.number().int().min(0).optional(),
+    })
+    .parse(req.body);
+  const incident = await prisma.incident.create({ data: { ...data, createdById: req.user.id } });
+  await audit(prisma, req, "incident.create", { target: incident.id });
+  res.status(201).json({ incident });
+});
+
+adminRouter.patch("/incidents/:id", async (req, res) => {
+  const data = z
+    .object({
+      status: z.enum(["OPEN", "REPORTED", "CLOSED"]).optional(),
+      reportedToCertInAt: z.coerce.date().nullable().optional(),
+      reportedToBoardAt: z.coerce.date().nullable().optional(),
+      peopleNotifiedAt: z.coerce.date().nullable().optional(),
+      notes: z.string().trim().max(2000).nullable().optional(),
+    })
+    .parse(req.body);
+  const i = await prisma.incident.findUnique({ where: { id: String(req.params.id) } });
+  if (!i) throw notFound("Incident");
+  const incident = await prisma.incident.update({ where: { id: i.id }, data });
+  await audit(prisma, req, "incident.update", { target: i.id, meta: data });
+  res.json({ incident });
 });
