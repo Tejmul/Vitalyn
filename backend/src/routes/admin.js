@@ -81,7 +81,6 @@ adminRouter.get("/users", async (_req, res) => {
       id: true,
       name: true,
       email: true,
-      username: true,
       phone: true,
       role: true,
       createdAt: true,
@@ -166,9 +165,6 @@ adminRouter.post("/applications/:id/approve", async (req, res) => {
   if (clash) throw new HttpError(409, "The applicant's email or mobile is now used by another account. Reject and ask them to reapply");
 
   const slug = await uniqueSlug(`${app.hospitalName} ${app.city}`, async (s) => Boolean(await prisma.hospital.findUnique({ where: { slug: s } })));
-  const username = await uniqueSlug(app.contactEmail.split("@")[0].replace(/[^a-z0-9]/gi, "_"), async (u) =>
-    Boolean(await prisma.user.findUnique({ where: { username: u.replace(/-/g, "_") } })),
-  );
 
   const result = await prisma.$transaction(async (tx) => {
     const hospital = await tx.hospital.create({
@@ -198,7 +194,6 @@ adminRouter.post("/applications/:id/approve", async (req, res) => {
       data: {
         name: app.contactName,
         email: app.contactEmail,
-        username: username.replace(/-/g, "_").slice(0, 24),
         phone: app.contactPhone,
         role: "HOSPITAL",
         hospitalId: hospital.id,

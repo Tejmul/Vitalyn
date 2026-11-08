@@ -218,7 +218,8 @@ function Account() {
   const { logout } = useAuth();
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
-  const [password, setPassword] = useState("");
+  const [codeSent, setCodeSent] = useState<{ devCode?: string } | null>(null);
+  const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -232,12 +233,24 @@ function Account() {
     URL.revokeObjectURL(url);
   };
 
+  const sendCode = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setCodeSent(await api<{ devCode?: string }>("/me/delete-code", { method: "POST" }));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const remove = async () => {
     setBusy(true);
     setError(null);
     try {
-      await api("/me", { method: "DELETE", body: { password } });
-      logout();
+      await api("/me", { method: "DELETE", body: { code } });
+      await logout();
       router.push("/");
     } catch (e) {
       setError((e as Error).message);
@@ -261,14 +274,27 @@ function Account() {
       {deleting && (
         <div className="mt-4 space-y-3 rounded-2xl bg-rose/6 p-4">
           <p className="text-[14px] font-semibold text-rose">This cancels your upcoming bookings and erases your account. It can&apos;t be undone.</p>
-          <Field label="Enter your password to confirm">
-            <input className={inputClass} type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          </Field>
+          {!codeSent ? (
+            <p className="text-[14px] text-ink-2">We&apos;ll text a code to your mobile to confirm it&apos;s you.</p>
+          ) : (
+            <>
+              {codeSent.devCode && <p className="text-[13px] text-amber">Development mode, no SMS sent. Code: <b className="font-mono">{codeSent.devCode}</b></p>}
+              <Field label="Code from the text message">
+                <input className={`${inputClass} font-mono tracking-[0.3em]`} inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} />
+              </Field>
+            </>
+          )}
           {error && <ErrorNote>{error}</ErrorNote>}
           <div className="flex gap-2">
-            <Button variant="danger" onClick={remove} loading={busy} disabled={!password}>
-              Delete permanently
-            </Button>
+            {!codeSent ? (
+              <Button variant="danger" onClick={sendCode} loading={busy}>
+                Text me a code
+              </Button>
+            ) : (
+              <Button variant="danger" onClick={remove} loading={busy} disabled={code.length !== 6}>
+                Delete permanently
+              </Button>
+            )}
             <Button variant="ghost" onClick={() => setDeleting(false)}>
               Keep my account
             </Button>

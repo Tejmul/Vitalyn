@@ -1,15 +1,21 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { api, tokenStore } from "./api";
+import { api, session } from "./api";
 import type { User } from "./types";
+
+type OtpSent = { resendIn: number; expiresInMinutes: number; devCode?: string };
+type VerifyResult = { user: User } | { needsProfile: true; signupToken: string };
 
 interface AuthState {
   user: User | null;
   ready: boolean;
-  login: (identifier: string, password: string) => Promise<User>;
-  register: (data: { name: string; email: string; username: string; phone?: string; password: string; consent: boolean }) => Promise<User>;
-  logout: () => void;
+  /** True right after the user pressed "Log out" (so pages don't bounce them to the login screen). */
+  signedOut: boolean;
+  requestOtp: (phone: string) => Promise<OtpSent>;
+  verifyOtp: (phone: string, code: string) => Promise<VerifyResult>;
+  completeProfile: (data: { signupToken: string; name: string; email?: string; consent: boolean; adult: boolean }) => Promise<User>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -17,37 +23,50 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
+  const [signedOut, setSignedOut] = useState(false);
 
   useEffect(() => {
-    // Restore the session from a saved token, if any.
-    const restore = tokenStore.get()
-      ? api<{ user: User }>("/auth/me")
-          .then((r) => setUser(r.user))
-          .catch(() => tokenStore.clear())
-      : Promise.resolve();
-    restore.finally(() => setReady(true));
+    session.onLost(() => setUser(null));
+    // Restore the session from the refresh cookie, if there is one.
+    api<{ accessToken: string; user: User }>("/auth/refresh", { method: "POST" })
+      .then((r) => {
+        session.set(r.accessToken);
+        setUser(r.user);
+      })
+      .catch(() => session.set(null))
+      .finally(() => setReady(true));
   }, []);
 
-  const login = useCallback(async (identifier: string, password: string) => {
-    const r = await api<{ token: string; user: User }>("/auth/login", { method: "POST", body: { identifier, password } });
-    tokenStore.set(r.token);
+  const requestOtp = useCallback((phone: string) => api<OtpSent>("/auth/otp/request", { method: "POST", body: { phone } }), []);
+
+  const verifyOtp = useCallback(async (phone: string, code: string): Promise<VerifyResult> => {
+    const r = await api<{ accessToken?: string; user?: User; needsProfile?: true; signupToken?: string }>("/auth/otp/verify", { method: "POST", body: { phone, code } });
+    if (r.needsProfile && r.signupToken) return { needsProfile: true, signupToken: r.signupToken };
+    session.set(r.accessToken!);
+    setSignedOut(false);
+    setUser(r.user!);
+    return { user: r.user! };
+  }, []);
+
+  const completeProfile = useCallback(async (data: Parameters<AuthState["completeProfile"]>[0]) => {
+    const r = await api<{ accessToken: string; user: User }>("/auth/complete-profile", { method: "POST", body: data });
+    session.set(r.accessToken);
+    setSignedOut(false);
     setUser(r.user);
     return r.user;
   }, []);
 
-  const register = useCallback(async (data: Parameters<AuthState["register"]>[0]) => {
-    const r = await api<{ token: string; user: User }>("/auth/register", { method: "POST", body: data });
-    tokenStore.set(r.token);
-    setUser(r.user);
-    return r.user;
-  }, []);
-
-  const logout = useCallback(() => {
-    tokenStore.clear();
+  const logout = useCallback(async () => {
+    await api("/auth/logout", { method: "POST" }).catch(() => {});
+    session.set(null);
+    setSignedOut(true);
     setUser(null);
   }, []);
 
-  const value = useMemo(() => ({ user, ready, login, register, logout }), [user, ready, login, register, logout]);
+  const value = useMemo(
+    () => ({ user, ready, signedOut, requestOtp, verifyOtp, completeProfile, logout }),
+    [user, ready, signedOut, requestOtp, verifyOtp, completeProfile, logout],
+  );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

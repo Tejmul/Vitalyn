@@ -54,8 +54,8 @@ export function AppNav() {
               <span className="block text-[12px] leading-tight text-muted">{{ USER: "Patient", HOSPITAL: "Hospital desk", DOCTOR: "Doctor", ADMIN: "Platform admin" }[user.role]}</span>
             </span>
             <button
-              onClick={() => {
-                logout();
+              onClick={async () => {
+                await logout();
                 router.push("/");
               }}
               className="inline-flex h-10 items-center gap-2 rounded-full px-3 text-[14px] font-semibold text-muted ring-1 ring-line hover:text-rose hover:ring-rose/30"

@@ -22,7 +22,7 @@ type AdminHospital = {
   _count: { doctors: number; appointments: number; events: number };
   stats: { cancelled: number; noShow: number; expired: number; arrived: number };
 };
-type AdminUser = { id: string; name: string; email: string; username: string; phone: string | null; role: string; createdAt: string; hospital: { name: string } | null };
+type AdminUser = { id: string; name: string; email: string | null; phone: string | null; role: string; createdAt: string; hospital: { name: string } | null };
 
 const today = () => new Date().toISOString().slice(0, 10);
 const plusDays = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
@@ -355,9 +355,9 @@ function Users() {
             {(rows ?? []).map((u) => (
               <tr key={u.id} className="border-b border-line last:border-0">
                 <td className="py-3">
-                  <span className="font-semibold">{u.name}</span> <span className="text-muted">@{u.username}</span>
+                  <span className="font-semibold">{u.name}</span>
                 </td>
-                <td className="py-3 text-muted">{u.email}</td>
+                <td className="py-3 text-muted">{u.email ?? "–"}</td>
                 <td className="py-3 font-mono text-[13px] text-muted">{u.phone ?? "–"}</td>
                 <td className="py-3">
                   <Badge tone={tone[u.role as keyof typeof tone] ?? "grey"}>{u.role.toLowerCase()}</Badge>

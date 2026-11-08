@@ -39,7 +39,7 @@ function ProfileForm({ h, onSaved }: { h: Hospital; onSaved: () => void }) {
   return (
     <div className="space-y-4">
       <Field label="One-line summary" hint="Shown on hospital cards">
-        <input className={inputClass} value={tagline} onChange={(e) => setTagline(e.target.value)} maxLength={80} placeholder="Heart and bone care, 24×7" />
+        <input className={inputClass} value={tagline} onChange={(e) => setTagline(e.target.value)} maxLength={80} placeholder="e.g. Cataract, retina and glaucoma care" />
       </Field>
       <Field label="About the hospital">
         <textarea className={`${inputClass} h-28 py-3`} value={description} onChange={(e) => setDescription(e.target.value)} />

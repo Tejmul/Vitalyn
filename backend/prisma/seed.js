@@ -4,7 +4,6 @@
  */
 import prismaPkg from "@prisma/client";
 const { PrismaClient } = prismaPkg;
-import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
@@ -522,14 +521,12 @@ async function main() {
       },
     ],
   });
-  const hash = (p) => bcrypt.hash(p, 12);
   const sab = created["sabarmati-care-hospital"];
   await prisma.user.create({
     data: {
       name: "Platform Admin",
       email: "admin@vitalyn.in",
-      username: "admin",
-      passwordHash: await hash("Admin@1234"),
+      phone: "9800000004",
       role: "ADMIN",
     },
   });
@@ -537,9 +534,7 @@ async function main() {
     data: {
       name: "Front Desk, Sabarmati",
       email: "hospital@vitalyn.in",
-      username: "sabarmati_desk",
       phone: "9800000002",
-      passwordHash: await hash("Hospital@1234"),
       role: "HOSPITAL",
       hospitalId: sab.id,
     },
@@ -548,9 +543,7 @@ async function main() {
     data: {
       name: "Dr. Kavita Shah",
       email: "doctor@vitalyn.in",
-      username: "dr_kavita",
       phone: "9800000003",
-      passwordHash: await hash("Doctor@1234"),
       role: "DOCTOR",
       hospitalId: sab.id,
     },
@@ -560,9 +553,7 @@ async function main() {
     data: {
       name: "Riya Patel",
       email: "user@vitalyn.in",
-      username: "riya",
       phone: "9800000001",
-      passwordHash: await hash("User@1234"),
       consentAt: new Date(),
       consentVersion: "2026-11-v1",
       profiles: {

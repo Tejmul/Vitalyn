@@ -4,7 +4,6 @@ export function publicUser(u) {
     id: u.id,
     name: u.name,
     email: u.email,
-    username: u.username,
     phone: u.phone,
     role: u.role,
     hospitalId: u.hospitalId,

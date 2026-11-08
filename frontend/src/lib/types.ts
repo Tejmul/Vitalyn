@@ -5,8 +5,7 @@ export type EventType = "HEALTH_CAMP" | "WORKSHOP" | "DRIVE" | "SCREENING" | "TA
 export interface User {
   id: string;
   name: string;
-  email: string;
-  username: string;
+  email: string | null;
   phone: string | null;
   role: Role;
   hospitalId: string | null;

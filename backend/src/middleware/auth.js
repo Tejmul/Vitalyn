@@ -4,7 +4,7 @@ import { HttpError } from "../lib/http.js";
 
 export function signToken(user) {
   return jwt.sign({ sub: user.id, role: user.role, hospitalId: user.hospitalId }, config.jwtSecret, {
-    expiresIn: config.jwtExpiresIn,
+    expiresIn: config.accessTtl,
   });
 }
 
