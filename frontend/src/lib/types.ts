@@ -44,6 +44,7 @@ export interface Hospital {
   state: string;
   pincode: string;
   phone: string;
+  whatsapp?: string | null;
   lat: number;
   lng: number;
   specialties: string[];

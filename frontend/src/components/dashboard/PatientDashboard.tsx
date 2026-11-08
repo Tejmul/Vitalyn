@@ -7,6 +7,7 @@ import { Bell, CalendarClock, Check, Download, MapPin, Phone, X } from "lucide-r
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { usePlace } from "@/lib/location";
+import { useSavedHospitals } from "@/lib/saved";
 import { useApi } from "@/lib/useApi";
 import { STATUS, dayLabel, inr, time12, tokenCode } from "@/lib/format";
 import type { Appointment, Hospital, HospitalEvent, Notice } from "@/lib/types";
@@ -168,6 +169,27 @@ function NextVisit({ a, onCancel, onMove, busy }: { a: Appointment; onCancel: ()
           </p>
         </div>
       </div>
+    </section>
+  );
+}
+
+/** "My hospitals": saved hospitals for one-tap rebooking. */
+function MyHospitals() {
+  const { saved } = useSavedHospitals();
+  const req = useApi<{ hospitals: Hospital[] }>("/saved", { n: saved.size });
+  const list = (req.data?.hospitals ?? []).filter((h) => saved.has(h.id));
+  return (
+    <section>
+      <h2 className="font-display text-[22px] font-bold tracking-[-0.03em]">My hospitals</h2>
+      {list.length === 0 ? (
+        <p className="mt-2 text-[14.5px] text-muted">Tap the heart on any hospital to keep it here for quick booking.</p>
+      ) : (
+        <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {list.map((h) => (
+            <HospitalCard key={h.id} h={h} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -433,7 +455,14 @@ export function PatientDashboard({ name }: { name: string }) {
                       {a.note ? ` · ${a.note}` : ""}
                     </p>
                   </div>
-                  <StatusBadge status={a.status} />
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={a.status} />
+                    {a.hospital && (
+                      <ButtonLink href={`/hospitals/${a.hospital.slug}?doctor=${a.doctor.id}`} size="sm" variant="secondary">
+                        Book again
+                      </ButtonLink>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -443,6 +472,8 @@ export function PatientDashboard({ name }: { name: string }) {
           <FamilyPanel />
         </Panel>
       </div>
+
+      <MyHospitals />
 
       {recs.length > 0 && (
         <section>

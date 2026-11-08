@@ -282,6 +282,8 @@ manageRouter.patch("/hospital", requireRole("HOSPITAL"), async (req, res) => {
       tagline: z.string().trim().max(80).optional().nullable(),
       description: z.string().trim().min(20, "Tell patients a little more (20+ characters)").max(600).optional(),
       phone: z.string().trim().min(8).max(20).optional(),
+      // WhatsApp for the front desk; empty string clears it
+      whatsapp: indianMobile.nullable().optional().or(z.literal("").transform(() => null)),
       beds: z.coerce.number().int().min(0).max(5000).optional(),
       emergency24x7: z.boolean().optional(),
       specialties: z.array(z.string().trim().min(2).max(40)).min(1).max(30).optional(),
