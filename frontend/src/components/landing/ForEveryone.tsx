@@ -19,7 +19,7 @@ const DESKS = [
     img: "/images/care-family.jpg",
     alt: "A doctor and nurse with a smiling patient",
     points: ["Approve, confirm or reschedule with one button", "Tokens are numbered for you, per doctor, per day", "Post health camps and events to nearby patients"],
-    cta: { href: "/register", label: "List your hospital" },
+    cta: { href: "/list-your-hospital", label: "List your hospital" },
   },
   {
     who: "For doctors",

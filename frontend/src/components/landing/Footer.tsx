@@ -3,7 +3,7 @@ import { Logo } from "@/components/ui/Logo";
 
 const COLS = [
   { h: "Patients", l: [["Find hospitals", "/hospitals"], ["Health camps", "/#events"], ["My bookings", "/dashboard"]] },
-  { h: "Hospitals", l: [["List your hospital", "/register"], ["Hospital log in", "/login"], ["How approvals work", "/#how-it-works"]] },
+  { h: "Hospitals", l: [["List your hospital", "/list-your-hospital"], ["Hospital log in", "/login"], ["How approvals work", "/#how-it-works"]] },
   { h: "Company", l: [["About", "/#home"], ["FAQ", "/#faq"], ["Privacy", "/#faq"]] },
 ];
 
