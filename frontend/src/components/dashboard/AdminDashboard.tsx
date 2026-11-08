@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { ErrorNote, Field, inputClass } from "@/components/ui/Field";
 import { Panel, Segmented, Stat } from "./bits";
 import { Applications } from "./Applications";
+import { Messages } from "./Messages";
 
 type Overview = { counts: { users: number; hospitals: number; doctors: number; appointments: number; pending: number; activePromotions: number; applications: number } };
 type AdminHospital = {
@@ -37,7 +38,7 @@ function promoState(p: Promotion) {
 
 export function AdminDashboard() {
   const [ov, setOv] = useState<Overview | null>(null);
-  const [tab, setTab] = useState<"applications" | "promotions" | "hospitals" | "users">("promotions");
+  const [tab, setTab] = useState<"applications" | "promotions" | "hospitals" | "messages" | "users">("promotions");
 
   const loadOv = useCallback(() => {
     api<Overview>("/admin/overview").then(setOv).catch(() => {});
@@ -65,12 +66,14 @@ export function AdminDashboard() {
           { value: "applications", label: "Applications", count: ov?.counts.applications },
           { value: "promotions", label: "Promotions" },
           { value: "hospitals", label: "Hospitals" },
+          { value: "messages", label: "Text messages" },
           { value: "users", label: "Users" },
         ]}
       />
       {tab === "applications" && <Applications onChange={loadOv} />}
       {tab === "promotions" && <Promotions onChange={loadOv} />}
       {tab === "hospitals" && <Hospitals />}
+      {tab === "messages" && <Messages />}
       {tab === "users" && <Users />}
     </div>
   );
