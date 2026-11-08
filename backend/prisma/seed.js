@@ -459,6 +459,7 @@ const hospitals = [
 async function main() {
   console.log("Clearing old data…");
   await prisma.otpChallenge.deleteMany();
+  await prisma.outboundMessage.deleteMany();
   await prisma.hospitalApplication.deleteMany();
   await prisma.appointment.deleteMany();
   await prisma.promotion.deleteMany();
