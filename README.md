@@ -42,7 +42,7 @@ Vitalyn has four kinds of users. Everything is done with buttons, because the pe
 
 | Who | What they can do |
 |---|---|
-| **Patient** | Find hospitals nearest first (GPS, city, area or PIN code), see distance, travel time and the next free slot, book a slot in three taps, book for up to 6 family members, move or cancel a booking, follow each approval step, see the token, get in-app updates, download or delete their data |
+| **Patient** | Save hospitals to **My hospitals**, **Book again** from past visits, WhatsApp the hospital desk, find hospitals nearest first (GPS, city, area or PIN code), see distance, travel time and the next free slot, book a slot in three taps, book for up to 6 family members, move or cancel a booking, follow each approval step, see the token, get in-app updates, download or delete their data |
 | **Hospital desk** | Add and edit **doctors** (with council/HPR registration number), work from a **Today** queue sorted by token, approve / confirm / reject (with a one-tap reason), mark **Arrived**, **Didn't come** or **Paid**, add a **walk-in** in two taps, set each doctor's OPD days and hours, mark a doctor **on leave**, post health camps and events |
 | **Doctor** | See only their own patients, accept or reject requests (when not on auto-confirm), mark themselves on leave |
 | **Platform admin** | Review **hospital applications** from /list-your-hospital, verify accreditations and doctor registration numbers, keep the **audit** and **incident** logs, run **sponsored hospital** promotions (with priority, dates and pause), verify hospitals and record their registration and ABDM HFR IDs, see bookings, cancellations, no-shows and expiries per hospital |
@@ -205,6 +205,8 @@ Base URL `/api`. Authenticated routes need `Authorization: Bearer <token>`. Erro
 | Method | Path | Notes |
 |---|---|---|
 | GET / POST | `/profiles` | family members (up to 6), optional ABHA number |
+| GET | `/saved` | "My hospitals" |
+| PUT / DELETE | `/saved/:hospitalId` | save or remove a hospital |
 | PATCH / DELETE | `/profiles/:id` | edit or remove (your own profile can't be removed) |
 | POST | `/appointments` | `doctorId`, `date`, `time`, `profileId`, `reason?` |
 | GET | `/appointments/me` | all bookings |
@@ -226,7 +228,7 @@ Base URL `/api`. Authenticated routes need `Authorization: Bearer <token>`. Erro
 | GET | `/manage/doctors` | hospital, doctor | with upcoming leave |
 | POST | `/manage/doctors` | hospital | add a doctor (name, speciality, qualification, fee, languages, registration no.) |
 | PATCH | `/manage/doctors/:id` | hospital | OPD days, hours, slot length, auto-confirm, details, stop/resume bookings |
-| GET / PATCH | `/manage/hospital` | hospital | the hospital's own profile |
+| GET / PATCH | `/manage/hospital` | hospital | the hospital's own profile, including the desk's WhatsApp number |
 | POST / DELETE | `/manage/doctors/:id/leave` | hospital, doctor | cancels that day's bookings and notifies patients |
 | GET / POST / DELETE | `/manage/events` | hospital | health camps, drives, talks |
 
