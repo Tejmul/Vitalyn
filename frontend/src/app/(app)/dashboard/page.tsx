@@ -8,12 +8,13 @@ import { ManageDashboard } from "@/components/dashboard/ManageDashboard";
 import { AdminDashboard } from "@/components/dashboard/AdminDashboard";
 
 export default function DashboardPage() {
-  const { user, ready } = useAuth();
+  const { user, ready, signedOut } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (ready && !user) router.replace("/login?next=/dashboard");
-  }, [ready, user, router]);
+    // Arrived without a session: go log in. Just logged out: the header sends them home instead.
+    if (ready && !user && !signedOut) router.replace("/login?next=/dashboard");
+  }, [ready, user, signedOut, router]);
 
   if (!ready || !user) return <div className="h-64 animate-pulse rounded-[28px] bg-white ring-1 ring-line" />;
   if (user.role === "ADMIN") return <AdminDashboard />;
