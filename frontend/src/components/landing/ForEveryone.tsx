@@ -26,7 +26,7 @@ const DESKS = [
     title: "Say yes to the patients you can see.",
     img: "/images/doctor-phone.jpg",
     alt: "A doctor checking appointments on a phone",
-    points: ["Review every request before it's confirmed", "Turn on auto-approve for routine slots", "See your day's queue at a glance"],
+    points: ["Accept requests yourself, or let them confirm instantly", "Mark yourself on leave and patients are told", "See your day's queue at a glance"],
     cta: { href: "/login", label: "Doctor log in" },
   },
 ];
