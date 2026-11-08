@@ -14,6 +14,7 @@ function ProfileForm({ h, onSaved }: { h: Hospital; onSaved: () => void }) {
   const [tagline, setTagline] = useState(h.tagline ?? "");
   const [description, setDescription] = useState(h.description);
   const [phone, setPhone] = useState(h.phone);
+  const [whatsapp, setWhatsapp] = useState(h.whatsapp ?? "");
   const [beds, setBeds] = useState(String(h.beds));
   const [emergency, setEmergency] = useState(h.emergency24x7);
   const [specialties, setSpecialties] = useState(h.specialties);
@@ -26,7 +27,7 @@ function ProfileForm({ h, onSaved }: { h: Hospital; onSaved: () => void }) {
     setError(null);
     setSaved(false);
     try {
-      await api("/manage/hospital", { method: "PATCH", body: { tagline: tagline || null, description, phone, beds: Number(beds || 0), emergency24x7: emergency, specialties } });
+      await api("/manage/hospital", { method: "PATCH", body: { tagline: tagline || null, description, phone, whatsapp, beds: Number(beds || 0), emergency24x7: emergency, specialties } });
       setSaved(true);
       onSaved();
     } catch (e) {
@@ -44,9 +45,12 @@ function ProfileForm({ h, onSaved }: { h: Hospital; onSaved: () => void }) {
       <Field label="About the hospital">
         <textarea className={`${inputClass} h-28 py-3`} value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-4">
         <Field label="Front desk phone">
           <input className={inputClass} value={phone} onChange={(e) => setPhone(e.target.value)} />
+        </Field>
+        <Field label="Desk WhatsApp" hint="Optional">
+          <input className={inputClass} type="tel" inputMode="tel" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="98250 12345" />
         </Field>
         <Field label="Beds">
           <input className={inputClass} inputMode="numeric" value={beds} onChange={(e) => setBeds(e.target.value.replace(/\D/g, "").slice(0, 4))} />
