@@ -77,7 +77,7 @@ authRouter.post("/login", async (req, res) => {
     where: { OR: [{ email: id }, { username: id }, { phone: id.replace(/^\+91/, "") }] },
   });
   // Same message either way so we don't reveal which accounts exist.
-  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+  if (!user || !user.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
     throw new HttpError(401, "Email or password is incorrect");
   }
   res.json({ token: signToken(user), user: publicUser(user) });
