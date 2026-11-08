@@ -32,6 +32,7 @@ meRouter.get("/export", async (req, res) => {
     include: {
       profiles: true,
       notifications: true,
+      consents: { select: { action: true, version: true, ageConfirmed: true, createdAt: true } },
       appointments: {
         include: {
           events: { select: { action: true, from: true, to: true, note: true, createdAt: true } },
@@ -41,9 +42,9 @@ meRouter.get("/export", async (req, res) => {
       },
     },
   });
-  const { profiles, notifications, appointments, ...rest } = user;
+  const { profiles, notifications, appointments, consents, ...rest } = user;
   res.setHeader("Content-Disposition", `attachment; filename="vitalyn-data-${user.id}.json"`);
-  res.json({ exportedAt: new Date().toISOString(), account: publicUser(rest), profiles, appointments, notifications });
+  res.json({ exportedAt: new Date().toISOString(), account: publicUser(rest), profiles, appointments, notifications, consents });
 });
 
 /** Step 1 of deleting an account: send a confirmation code to the account's mobile. */
@@ -67,6 +68,8 @@ meRouter.delete("/", async (req, res) => {
   await endAllSessions(user.id);
 
   await prisma.$transaction([
+    // Withdrawal is logged; the record survives the account (userId becomes null) as proof
+    prisma.consentRecord.create({ data: { userId: user.id, action: "WITHDRAWN", version: user.consentVersion ?? "unknown" } }),
     prisma.appointment.updateMany({
       where: { userId: user.id, status: { in: ["PENDING", "DOCTOR_APPROVED", "CONFIRMED"] } },
       data: { status: "CANCELLED", note: "Account deleted" },
