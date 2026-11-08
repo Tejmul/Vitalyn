@@ -10,7 +10,7 @@ const QA = [
   ["What if the doctor can't see me?", "You'll see 'Not accepted' with a reason, and your slot is freed. If the hospital doesn't reply in time, the request expires and we tell you straight away. Pick another time with one tap."],
   ["Can I book for my mother or father?", "Yes. When you book, type the patient's name and age. All family bookings stay together in your account."],
   ["Can I cancel or change the time?", "Cancel any time before your visit. Press Move to pick a new time, up to 2 hours before. Your old slot is only released once the new one is yours."],
-  ["My hospital isn't listed. Can it join?", "Yes. Hospitals sign up, our team verifies them, and they can start taking bookings the same week."],
+  ["My hospital isn't listed. Can it join?", "Yes. Fill in the form at List your hospital. Our team checks the registration details, and once approved the desk logs in with a one-time code on their mobile."],
 ];
 
 export function Faq() {

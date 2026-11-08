@@ -77,6 +77,8 @@ export interface Doctor {
   endTime: string;
   slotMinutes: number;
   autoApprove: boolean;
+  registrationNo: string | null;
+  active: boolean;
   leaveDates?: string[];
   leaves?: { id: string; date: string; reason: string | null }[];
 }
@@ -124,4 +126,30 @@ export interface Promotion {
   endsAt: string;
   active: boolean;
   hospital: { id: string; name: string; city: string; slug: string };
+}
+
+export interface HospitalApplication {
+  id: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  hospitalName: string;
+  description: string;
+  address: string;
+  city: string;
+  state: string;
+  pincode: string;
+  phone: string;
+  lat: number;
+  lng: number;
+  specialties: string[];
+  beds: number | null;
+  emergency24x7: boolean;
+  registrationNo: string;
+  hfrId: string | null;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  reviewNote: string | null;
+  reviewedAt: string | null;
+  hospitalId: string | null;
+  createdAt: string;
 }

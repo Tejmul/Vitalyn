@@ -9,7 +9,7 @@ export async function nextFreeSlots(hospitalIds, days = 7) {
   const from = todayIST();
   const to = addDays(from, days - 1);
   const [doctors, booked, leaves] = await Promise.all([
-    prisma.doctor.findMany({ where: { hospitalId: { in: hospitalIds } } }),
+    prisma.doctor.findMany({ where: { hospitalId: { in: hospitalIds }, active: true } }),
     prisma.appointment.findMany({
       where: { hospitalId: { in: hospitalIds }, date: { gte: from, lte: to }, status: { in: ACTIVE_STATUSES } },
       select: { doctorId: true, date: true, time: true },

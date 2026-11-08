@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { ErrorNote, Field, inputClass } from "@/components/ui/Field";
 import { Empty, Panel, Segmented, Stat, StatusBadge } from "./bits";
+import { DoctorForm } from "./DoctorForm";
+import { HospitalProfile } from "./HospitalProfile";
 
 type Overview = {
   hospital: { id: string; name: string; slug: string; city: string } | null;
@@ -225,6 +227,8 @@ export function ManageDashboard({ role }: { role: Extract<Role, "HOSPITAL" | "DO
         <DoctorsPanel role={role} doctors={doctors} today={ov?.today} onChange={load} />
         <EventsPanel role={role} onChange={load} />
       </div>
+
+      {role === "HOSPITAL" && <HospitalProfile />}
     </div>
   );
 }
@@ -370,13 +374,19 @@ function ScheduleEditor({ d, onSaved }: { d: Doctor; onSaved: () => void }) {
 }
 
 function DoctorsPanel({ role, doctors, today, onChange }: { role: Role; doctors: Doctor[] | null; today?: string; onChange: () => void }) {
+  // editing = "<doctorId>:hours" | "<doctorId>:details" | "new"
   const [editing, setEditing] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const specialties = [...new Set((doctors ?? []).map((d) => d.specialty))];
 
-  const toggleAuto = async (d: Doctor) => {
-    setBusy(d.id + "auto");
-    await api(`/manage/doctors/${d.id}`, { method: "PATCH", body: { autoApprove: !d.autoApprove } }).catch(() => {});
+  const patch = async (d: Doctor, body: Record<string, unknown>, key: string) => {
+    setBusy(d.id + key);
+    try {
+      await api(`/manage/doctors/${d.id}`, { method: "PATCH", body });
+    } catch (e) {
+      setMsg((e as Error).message);
+    }
     setBusy(null);
     onChange();
   };
@@ -400,20 +410,49 @@ function DoctorsPanel({ role, doctors, today, onChange }: { role: Role; doctors:
     onChange();
   };
 
+  const toggleActive = (d: Doctor) => {
+    if (d.active && !window.confirm(`Stop new bookings for ${d.name}? Existing bookings stay as they are.`)) return;
+    patch(d, { active: !d.active }, "active");
+  };
+
   return (
-    <Panel title={role === "DOCTOR" ? "My schedule" : "Doctors"}>
+    <Panel
+      title={role === "DOCTOR" ? "My schedule" : "Doctors"}
+      action={
+        role === "HOSPITAL" && editing !== "new" ? (
+          <Button size="sm" onClick={() => setEditing("new")}>
+            <UserPlus className="size-4" /> Add doctor
+          </Button>
+        ) : null
+      }
+    >
       {msg && <p className="mb-3 rounded-xl bg-sky px-4 py-3 text-[13.5px] text-blue-deep">{msg}</p>}
+      {editing === "new" && (
+        <DoctorForm
+          specialties={specialties}
+          onSaved={() => {
+            setEditing(null);
+            setMsg("Doctor added. Set their OPD hours with \"Edit hours\".");
+            onChange();
+          }}
+          onCancel={() => setEditing(null)}
+        />
+      )}
       <ul className="divide-y divide-line">
         {(doctors ?? []).map((d) => {
           const onLeaveToday = d.leaves?.some((l) => l.date === today);
           return (
-            <li key={d.id} className="py-4">
+            <li key={d.id} className={`py-4 ${d.active ? "" : "opacity-60"}`}>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-[15px] font-semibold">{d.name}</p>
+                  <p className="flex flex-wrap items-center gap-2 text-[15px] font-semibold">
+                    {d.name}
+                    {!d.active && <Badge tone="grey">Not taking bookings</Badge>}
+                  </p>
                   <p className="text-[13px] text-muted">
                     {d.specialty} · {doctorHours(d)} · {d.slotMinutes} min
                   </p>
+                  <p className="text-[12px] text-muted">{d.registrationNo ? `Reg. no. ${d.registrationNo}` : "Registration number missing"}</p>
                   {d.leaves && d.leaves.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {d.leaves.map((l) => (
@@ -428,9 +467,9 @@ function DoctorsPanel({ role, doctors, today, onChange }: { role: Role; doctors:
                   )}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {role === "HOSPITAL" && (
+                  {role === "HOSPITAL" && d.active && (
                     <button
-                      onClick={() => toggleAuto(d)}
+                      onClick={() => patch(d, { autoApprove: !d.autoApprove }, "auto")}
                       role="switch"
                       aria-checked={d.autoApprove}
                       disabled={busy === d.id + "auto"}
@@ -440,25 +479,44 @@ function DoctorsPanel({ role, doctors, today, onChange }: { role: Role; doctors:
                       Auto-approve
                     </button>
                   )}
-                  {!onLeaveToday && (
+                  {d.active && !onLeaveToday && (
                     <Button size="sm" variant="secondary" className="h-9" onClick={() => leaveToday(d)} loading={busy === d.id + "leave"}>
                       <CalendarX2 className="size-4" /> On leave today
                     </Button>
                   )}
                   {role === "HOSPITAL" && (
-                    <Button size="sm" variant="ghost" className="h-9" onClick={() => setEditing(editing === d.id ? null : d.id)}>
-                      {editing === d.id ? "Close" : "Edit hours"}
-                    </Button>
+                    <>
+                      <Button size="sm" variant="ghost" className="h-9" onClick={() => setEditing(editing === d.id + ":hours" ? null : d.id + ":hours")}>
+                        {editing === d.id + ":hours" ? "Close" : "Edit hours"}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-9" onClick={() => setEditing(editing === d.id + ":details" ? null : d.id + ":details")}>
+                        {editing === d.id + ":details" ? "Close" : "Edit details"}
+                      </Button>
+                      <Button size="sm" variant={d.active ? "danger" : "primary"} className="h-9" onClick={() => toggleActive(d)} loading={busy === d.id + "active"}>
+                        {d.active ? "Stop bookings" : "Resume bookings"}
+                      </Button>
+                    </>
                   )}
                 </div>
               </div>
-              {editing === d.id && (
+              {editing === d.id + ":hours" && (
                 <ScheduleEditor
                   d={d}
                   onSaved={() => {
                     setEditing(null);
                     onChange();
                   }}
+                />
+              )}
+              {editing === d.id + ":details" && (
+                <DoctorForm
+                  doctor={d}
+                  specialties={specialties}
+                  onSaved={() => {
+                    setEditing(null);
+                    onChange();
+                  }}
+                  onCancel={() => setEditing(null)}
                 />
               )}
             </li>

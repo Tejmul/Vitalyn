@@ -69,9 +69,13 @@ export default function HospitalPage() {
             <dl className="mt-5 grid grid-cols-2 gap-3 text-[14px]">
               <div className="flex items-center gap-2 text-ink-2">
                 <Star className="size-4 fill-amber text-amber" />
-                <span>
-                  <b>{h.rating.toFixed(1)}</b> ({h.reviewCount.toLocaleString("en-IN")} reviews)
-                </span>
+                {h.reviewCount > 0 ? (
+                  <span>
+                    <b>{h.rating.toFixed(1)}</b> ({h.reviewCount.toLocaleString("en-IN")} reviews)
+                  </span>
+                ) : (
+                  <span>New on Vitalyn</span>
+                )}
               </div>
               <div className="flex items-center gap-2 text-ink-2">
                 <BedDouble className="size-4 text-blue" /> {h.beds} beds
@@ -106,6 +110,12 @@ export default function HospitalPage() {
           <h2 className="font-display text-[24px] font-bold tracking-[-0.03em]">Choose a doctor</h2>
           <p className="text-[14.5px] text-muted">Consultation fees are paid at the hospital. No booking fee.</p>
           <div className="mt-4 space-y-3">
+            {h.doctors.length === 0 && (
+              <div className="rounded-[22px] bg-white p-6 text-center ring-1 ring-line">
+                <p className="font-display text-[17px] font-bold">No doctors listed yet</p>
+                <p className="mt-1 text-[14px] text-muted">This hospital is new on Vitalyn. Call the front desk to book for now.</p>
+              </div>
+            )}
             {h.doctors.map((d) => {
               const on = d.id === doctorId;
               return (
@@ -128,6 +138,7 @@ export default function HospitalPage() {
                     <span className="block text-[13.5px] text-muted">
                       {d.specialty} · {d.qualification} · {d.experienceYears} yrs
                     </span>
+                    {d.registrationNo && <span className="block text-[12px] text-muted">Reg. no. {d.registrationNo}</span>}
                     <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-muted">
                       <span className="flex items-center gap-1.5">
                         <Clock className="size-3.5" /> {doctorHours(d)}

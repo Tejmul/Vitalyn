@@ -26,6 +26,7 @@ const slotSchema = {
 
 /** Throws unless `time` on `date` is a real, future, non-leave slot for this doctor. */
 async function assertBookable(doctor, date, time) {
+  if (!doctor.active) throw new HttpError(400, `${doctor.name} is not taking bookings right now`);
   const leave = await prisma.doctorLeave.findUnique({ where: { doctorId_date: { doctorId: doctor.id, date } } });
   if (leave) throw new HttpError(400, "The doctor is on leave that day. Pick another day");
   if (!slotsForDay(doctor, date).includes(time)) throw new HttpError(400, "That time isn't one of the doctor's slots");

@@ -54,7 +54,7 @@ hospitalsRouter.get("/", async (req, res) => {
           }
         : {}),
     },
-    include: { _count: { select: { doctors: true, events: { where: { startsAt: { gte: new Date() } } } } } },
+    include: { _count: { select: { doctors: { where: { active: true } }, events: { where: { startsAt: { gte: new Date() } } } } } },
   });
   const next = await nextFreeSlots(hospitals.map((h) => h.id));
   let rows = hospitals.map((h) => ({ ...withDistance(h, q.lat, q.lng), sponsored: false, nextSlotAt: next.get(h.id) ?? null }));
@@ -113,6 +113,7 @@ hospitalsRouter.get("/:slug", async (req, res) => {
     where: { slug: req.params.slug },
     include: {
       doctors: {
+        where: { active: true },
         orderBy: { experienceYears: "desc" },
         include: { leaves: { where: { date: { gte: todayIST() } }, select: { date: true } } },
       },
@@ -129,7 +130,7 @@ hospitalsRouter.get("/:slug", async (req, res) => {
 hospitalsRouter.get("/doctors/:doctorId/slots", async (req, res) => {
   const { date } = z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).default(todayIST()) }).parse(req.query);
   const doctor = await prisma.doctor.findUnique({ where: { id: req.params.doctorId } });
-  if (!doctor) throw notFound("Doctor");
+  if (!doctor || !doctor.active) throw notFound("Doctor");
   const [taken, leave] = await Promise.all([
     prisma.appointment.findMany({ where: { doctorId: doctor.id, date, status: { in: ACTIVE_STATUSES } }, select: { time: true } }),
     prisma.doctorLeave.findUnique({ where: { doctorId_date: { doctorId: doctor.id, date } } }),
