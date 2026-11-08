@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowLeft, BadgeCheck, BedDouble, CheckCircle2, Clock, Languages, MapPin, Navigation, Phone, Siren, Star } from "lucide-react";
+import { ArrowLeft, BadgeCheck, BedDouble, CheckCircle2, Clock, Languages, MapPin, MessageCircle, Navigation, Phone, Siren, Star } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { usePlace } from "@/lib/location";
@@ -17,6 +17,7 @@ import { ErrorNote, Field, inputClass } from "@/components/ui/Field";
 import { EventCard } from "@/components/landing/Events";
 import { SlotPicker } from "@/components/app/SlotPicker";
 import { ProfilePicker, defaultProfileId, useProfiles } from "@/components/app/Family";
+import { SaveButton } from "@/components/app/SaveButton";
 
 type Full = Hospital & { doctors: Doctor[]; events: HospitalEvent[] };
 
@@ -25,7 +26,9 @@ export default function HospitalPage() {
   const { place } = usePlace();
   const req = useApi<{ hospital: Full }>(`/hospitals/${slug}`, { lat: place.lat, lng: place.lng });
   const h = req.data?.hospital ?? null;
-  const [doctorId, setDoctorId] = useState<string | null>(null);
+  // "Book again" links pass ?doctor=<id> to open with that doctor selected
+  const [doctorId, setDoctorId] = useState<string | null>(useSearchParams().get("doctor"));
+  const [dept, setDept] = useState("All");
 
   if (req.error)
     return (
@@ -39,6 +42,13 @@ export default function HospitalPage() {
   if (!h) return <div className="h-[420px] animate-pulse rounded-[28px] bg-white ring-1 ring-line" />;
 
   const doctor = h.doctors.find((d) => d.id === doctorId) ?? null;
+  const departments = [...new Set(h.doctors.map((d) => d.specialty))].sort();
+  const shown = dept === "All" ? h.doctors : h.doctors.filter((d) => d.specialty === dept);
+  // Group by department when showing all
+  const groups = (dept === "All" && departments.length > 1 ? departments : [dept === "All" ? null : dept]).map((name) => ({
+    name,
+    doctors: name ? shown.filter((d) => d.specialty === name) : shown,
+  }));
   const maps = `https://www.google.com/maps/dir/?api=1&destination=${h.lat},${h.lng}`;
   const next = nextSlotLabel(h.nextSlotAt);
 
@@ -59,12 +69,19 @@ export default function HospitalPage() {
                 </span>
               )}
               {h.accreditations?.map((a) => (
-                <span key={a} className="inline-flex items-center gap-1.5 rounded-full bg-signal/10 px-2.5 py-1 text-[12px] font-semibold text-signal" title={`${a} accredited (checked by Vitalyn)`}>
+                <span
+                  key={a}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-signal/10 px-2.5 py-1 text-[12px] font-semibold text-signal"
+                  title={`${a} accredited (checked by Vitalyn)`}
+                >
                   <BadgeCheck className="size-3.5" /> {a} accredited
                 </span>
               ))}
               {h.hfrId && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-signal/10 px-2.5 py-1 text-[12px] font-semibold text-signal" title={`ABDM Health Facility Registry ID ${h.hfrId}`}>
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-full bg-signal/10 px-2.5 py-1 text-[12px] font-semibold text-signal"
+                  title={`ABDM Health Facility Registry ID ${h.hfrId}`}
+                >
                   <BadgeCheck className="size-3.5" /> ABDM registered
                 </span>
               )}
@@ -99,12 +116,31 @@ export default function HospitalPage() {
               )}
             </dl>
             <div className="mt-auto flex flex-wrap gap-2 pt-6">
-              <a href={`tel:${h.phone.replace(/\s/g, "")}`} className="inline-flex h-11 items-center gap-2 rounded-full bg-ink px-5 text-[14.5px] font-semibold text-white hover:bg-ink-2">
+              <a
+                href={`tel:${h.phone.replace(/\s/g, "")}`}
+                className="inline-flex h-11 items-center gap-2 rounded-full bg-ink px-5 text-[14.5px] font-semibold text-white hover:bg-ink-2"
+              >
                 <Phone className="size-4" /> Call hospital
               </a>
-              <a href={maps} target="_blank" rel="noreferrer" className="inline-flex h-11 items-center gap-2 rounded-full bg-white px-5 text-[14.5px] font-semibold text-ink ring-1 ring-line hover:ring-blue/40">
+              {h.whatsapp && (
+                <a
+                  href={`https://wa.me/91${h.whatsapp}?text=${encodeURIComponent(`Hello ${h.name}, I have a question about an appointment.`)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex h-11 items-center gap-2 rounded-full bg-[#e7f8ee] px-5 text-[14.5px] font-semibold text-[#0f7a3d] ring-1 ring-[#0f7a3d]/20 hover:ring-[#0f7a3d]/40"
+                >
+                  <MessageCircle className="size-4" /> WhatsApp the desk
+                </a>
+              )}
+              <a
+                href={maps}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-11 items-center gap-2 rounded-full bg-white px-5 text-[14.5px] font-semibold text-ink ring-1 ring-line hover:ring-blue/40"
+              >
                 <Navigation className="size-4" /> Directions
               </a>
+              <SaveButton hospitalId={h.id} variant="pill" />
             </div>
           </div>
         </div>
@@ -114,6 +150,21 @@ export default function HospitalPage() {
         <section>
           <h2 className="font-display text-[24px] font-bold tracking-[-0.03em]">Choose a doctor</h2>
           <p className="text-[14.5px] text-muted">Consultation fees are paid at the hospital. No booking fee.</p>
+          {departments.length > 1 && (
+            <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Departments">
+              {["All", ...departments].map((d) => (
+                <button
+                  key={d}
+                  role="tab"
+                  aria-selected={dept === d}
+                  onClick={() => setDept(d)}
+                  className={`h-9 rounded-full px-4 text-[13.5px] font-semibold transition ${dept === d ? "bg-ink text-white" : "bg-white text-ink-2 ring-1 ring-line hover:ring-ink/30"}`}
+                >
+                  {d === "All" ? `All departments` : d}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="mt-4 space-y-3">
             {h.doctors.length === 0 && (
               <div className="rounded-[22px] bg-white p-6 text-center ring-1 ring-line">
@@ -121,54 +172,61 @@ export default function HospitalPage() {
                 <p className="mt-1 text-[14px] text-muted">This hospital is new on Vitalyn. Call the front desk to book for now.</p>
               </div>
             )}
-            {h.doctors.map((d) => {
-              const on = d.id === doctorId;
-              return (
-                <button
-                  key={d.id}
-                  onClick={() => setDoctorId(d.id)}
-                  aria-pressed={on}
-                  className={`flex w-full items-center gap-4 rounded-[22px] bg-white p-4 text-left ring-1 transition sm:p-5 ${on ? "ring-2 ring-blue" : "ring-line hover:ring-blue/30"}`}
-                >
-                  <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-sky font-display text-[18px] font-bold text-blue">
-                    {d.name
-                      .replace(/^Dr\.?\s*/, "")
-                      .split(" ")
-                      .map((w) => w[0])
-                      .join("")
-                      .slice(0, 2)}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-display text-[17.5px] font-bold tracking-[-0.02em] text-ink">{d.name}</span>
-                    <span className="block text-[13.5px] text-muted">
-                      {d.specialty} · {d.qualification} · {d.experienceYears} yrs
-                    </span>
-                    {d.registrationNo && (
-                      <span className="flex items-center gap-1 text-[12px] text-muted">
-                        Reg. no. {d.registrationNo}
-                        {d.registrationVerifiedAt && (
-                          <span className="inline-flex items-center gap-0.5 font-semibold text-signal" title="Checked against the medical council / HPR registry">
-                            <BadgeCheck className="size-3.5" /> verified
+            {groups.map((g) => (
+              <div key={g.name ?? "all"} className="space-y-3">
+                {g.name && dept === "All" && departments.length > 1 && <p className="pt-2 font-mono text-[11.5px] uppercase tracking-[0.14em] text-muted">{g.name}</p>}
+                {g.doctors.map((d) => {
+                  const on = d.id === doctorId;
+                  return (
+                    <button
+                      key={d.id}
+                      onClick={() => setDoctorId(d.id)}
+                      aria-pressed={on}
+                      className={`flex w-full items-center gap-4 rounded-[22px] bg-white p-4 text-left ring-1 transition sm:p-5 ${on ? "ring-2 ring-blue" : "ring-line hover:ring-blue/30"}`}
+                    >
+                      <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-sky font-display text-[18px] font-bold text-blue">
+                        {d.name
+                          .replace(/^Dr\.?\s*/, "")
+                          .split(" ")
+                          .map((w) => w[0])
+                          .join("")
+                          .slice(0, 2)}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-display text-[17.5px] font-bold tracking-[-0.02em] text-ink">{d.name}</span>
+                        <span className="block text-[13.5px] text-muted">
+                          {d.specialty} · {d.qualification} · {d.experienceYears} yrs
+                        </span>
+                        {d.registrationNo && (
+                          <span className="flex items-center gap-1 text-[12px] text-muted">
+                            Reg. no. {d.registrationNo}
+                            {d.registrationVerifiedAt && (
+                              <span className="inline-flex items-center gap-0.5 font-semibold text-signal" title="Checked against the medical council / HPR registry">
+                                <BadgeCheck className="size-3.5" /> verified
+                              </span>
+                            )}
                           </span>
                         )}
+                        <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-muted">
+                          <span className="flex items-center gap-1.5">
+                            <Clock className="size-3.5" /> {doctorHours(d)}
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <Languages className="size-3.5" /> {d.languages.join(", ")}
+                          </span>
+                        </span>
                       </span>
-                    )}
-                    <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-muted">
-                      <span className="flex items-center gap-1.5">
-                        <Clock className="size-3.5" /> {doctorHours(d)}
+                      <span className="hidden text-right sm:block">
+                        <span className="block font-display text-[18px] font-bold text-ink">{inr(d.fee)}</span>
+                        <span className={`mt-1 inline-flex h-9 items-center rounded-full px-4 text-[13.5px] font-semibold ${on ? "bg-blue text-white" : "bg-sky text-blue"}`}>
+                          {on ? "Selected" : "Book"}
+                        </span>
                       </span>
-                      <span className="flex items-center gap-1.5">
-                        <Languages className="size-3.5" /> {d.languages.join(", ")}
-                      </span>
-                    </span>
-                  </span>
-                  <span className="hidden text-right sm:block">
-                    <span className="block font-display text-[18px] font-bold text-ink">{inr(d.fee)}</span>
-                    <span className={`mt-1 inline-flex h-9 items-center rounded-full px-4 text-[13.5px] font-semibold ${on ? "bg-blue text-white" : "bg-sky text-blue"}`}>{on ? "Selected" : "Book"}</span>
-                  </span>
-                </button>
-              );
-            })}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </div>
 
           {h.events.length > 0 && (
@@ -249,7 +307,8 @@ function BookingPanel({ doctor, hospitalSlug }: { doctor: Doctor | null; hospita
           </p>
           {done.approveBy && (
             <p className="mt-2 text-[12.5px] text-muted">
-              If the hospital doesn&apos;t reply by {new Date(done.approveBy).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}, the request expires and we&apos;ll tell you.
+              If the hospital doesn&apos;t reply by {new Date(done.approveBy).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}, the request expires and
+              we&apos;ll tell you.
             </p>
           )}
         </div>
