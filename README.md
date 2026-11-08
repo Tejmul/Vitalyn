@@ -43,9 +43,9 @@ Vitalyn has four kinds of users. Everything is done with buttons, because the pe
 | Who | What they can do |
 |---|---|
 | **Patient** | Find hospitals nearest first (GPS, city, area or PIN code), see distance, travel time and the next free slot, book a slot in three taps, book for up to 6 family members, move or cancel a booking, follow each approval step, see the token, get in-app updates, download or delete their data |
-| **Hospital desk** | Work from a **Today** queue sorted by token, approve / confirm / reject (with a one-tap reason), mark **Arrived**, **Didn't come** or **Paid**, add a **walk-in** in two taps, set each doctor's OPD days and hours, mark a doctor **on leave**, post health camps and events |
+| **Hospital desk** | Add and edit **doctors** (with council/HPR registration number), work from a **Today** queue sorted by token, approve / confirm / reject (with a one-tap reason), mark **Arrived**, **Didn't come** or **Paid**, add a **walk-in** in two taps, set each doctor's OPD days and hours, mark a doctor **on leave**, post health camps and events |
 | **Doctor** | See only their own patients, approve or reject requests, mark themselves on leave |
-| **Platform admin** | Run **sponsored hospital** promotions (with priority, dates and pause), verify hospitals and record their registration and ABDM HFR IDs, see bookings, cancellations, no-shows and expiries per hospital |
+| **Platform admin** | Review **hospital applications** from /list-your-hospital, run **sponsored hospital** promotions (with priority, dates and pause), verify hospitals and record their registration and ABDM HFR IDs, see bookings, cancellations, no-shows and expiries per hospital |
 
 ## Screenshots
 
@@ -131,7 +131,7 @@ docker compose up -d
 # 2. API  →  http://localhost:4000/api
 cd backend
 npm install
-cp .env.example .env              # set a long random JWT_SECRET
+cp .env.example .env              # set a long random JWT_SECRET; MSG91 keys optional in dev
 npx prisma migrate deploy
 npm run db:seed
 npm run dev
@@ -153,14 +153,14 @@ npm run dev
 
 ## Demo accounts
 
-The login page has one-tap buttons for these in development.
+Everyone logs in with a mobile number and a one-time code. Without MSG91 keys (development), no SMS is sent: the code is shown on the login screen and printed in the API log. The login page also has one-tap demo buttons.
 
-| Role | Email | Password |
-|---|---|---|
-| Patient (with a family member) | `user@vitalyn.in` | `User@1234` |
-| Hospital desk, Sabarmati Care | `hospital@vitalyn.in` | `Hospital@1234` |
-| Doctor, Dr. Kavita Shah | `doctor@vitalyn.in` | `Doctor@1234` |
-| Platform admin | `admin@vitalyn.in` | `Admin@1234` |
+| Role | Mobile |
+|---|---|
+| Patient (with a family member) | `98000 00001` |
+| Hospital desk, Sabarmati Care | `98000 00002` |
+| Doctor, Dr. Kavita Shah | `98000 00003` |
+| Platform admin | `98000 00004` |
 
 All hospitals, doctors and events in the seed data are fictional.
 
@@ -173,13 +173,17 @@ Base URL `/api`. Authenticated routes need `Authorization: Bearer <token>`. Erro
 
 | Method | Path | Who | Notes |
 |---|---|---|---|
-| POST | `/auth/register` | anyone | name, email, username, phone (optional), password, `consent: true` |
-| POST | `/auth/login` | anyone | `identifier` (email, username or phone) + password |
+| POST | `/auth/otp/request` | anyone | `phone` → 6-digit code by SMS (one per 30 s, three per 10 min) |
+| POST | `/auth/otp/verify` | anyone | `phone`, `code` → session; for a new number `{ needsProfile, signupToken }` |
+| POST | `/auth/complete-profile` | new number | `signupToken`, `name`, `email?`, `consent: true`, `adult: true` |
+| POST | `/auth/refresh` | refresh cookie | new 15-minute access token; rotates the cookie |
+| POST | `/auth/logout` | logged in | ends the session |
 | GET | `/auth/me` | logged in | current user |
 | GET | `/me/notifications` | logged in | latest updates + unread count |
 | POST | `/me/notifications/read` | logged in | mark all read |
 | GET | `/me/export` | patient | download everything we hold (JSON) |
-| DELETE | `/me` | patient | delete account (password required); bookings are anonymised |
+| POST | `/me/delete-code` | patient | texts a confirmation code |
+| DELETE | `/me` | patient | delete account with that `code`; bookings are anonymised |
 
 </details>
 
@@ -260,6 +264,7 @@ Built with India's Digital Personal Data Protection Act, 2023 in mind:
 - Patients can **download their data** and **delete their account** from the dashboard.
 - A hospital only sees its own bookings; a doctor only sees their own patients.
 - Every booking change is written to an audit log.
+- Sessions use a 15-minute access token kept in memory and a rotating httpOnly refresh cookie. Reusing an old refresh token logs out every session.
 - We collect the minimum: name, age, gender, relation, and an optional reason for visit.
 
 The full research behind these choices (15 apps compared, Indian regulations, monetisation, roadmap) is in [`docs/research`](docs/research/india-hospital-booking-research.pdf).
@@ -293,7 +298,7 @@ Vitalyn/
 | Part | Where | Settings |
 |---|---|---|
 | Database | Any managed Postgres in an Indian region (e.g. AWS RDS Mumbai) | run `npx prisma migrate deploy` |
-| Backend | Railway, Render, a VM or container | `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGIN`, `NODE_ENV=production`, then `npm start` |
+| Backend | Railway, Render, a VM or container | `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGIN`, `NODE_ENV=production`, MSG91 keys, and `COOKIE_SAMESITE=none` if the site and API are on different domains; then `npm start` |
 | Frontend | Vercel (Mumbai region) or any Node host | `NEXT_PUBLIC_API_URL` pointing at the API |
 
 The expiry job runs inside the API process. With more than one API instance, move it to a single worker.
@@ -306,10 +311,21 @@ The expiry job runs inside the API process. With more than one API instance, mov
 - [x] Doctor schedules and leave
 - [x] Capped, labelled sponsored hospitals
 - [x] Audit log, in-app updates, data export and deletion
-- [ ] Phone OTP login (MSG91 + DLT registration)
+- [x] Phone OTP login (MSG91 Flow API; dev mode shows the code on screen)
 - [ ] WhatsApp and SMS updates from the notification outbox
 - [ ] UPI prepayment with automatic refunds (Razorpay)
 - [ ] Live "Now serving" queue screen for hospital TVs
 - [ ] Hindi and regional languages
 - [ ] Verified reviews after a visit
 - [ ] ABDM: ABHA linking and Scan & Share
+
+## SMS (MSG91)
+
+Vitalyn sends OTPs through MSG91's Flow API (`POST https://control.msg91.com/api/v5/flow/`, `authkey` header). In India every SMS template must be DLT-registered first.
+
+1. In MSG91, create a DLT-approved OTP template with a variable such as `##otp##`, and note its flow/template ID.
+2. Set in `backend/.env`: `MSG91_AUTH_KEY`, `MSG91_SENDER_ID`, `MSG91_OTP_FLOW_ID`, and `MSG91_OTP_VAR` (the variable name, default `otp`).
+3. MSG91's Flow API documents the ID field as `flow_id`. If your account's API uses `template_id`, set `MSG91_FLOW_FIELD=template_id`.
+4. New MSG91 auth keys may have IP whitelisting on: add your server's IP in MSG91.
+
+Until `MSG91_AUTH_KEY` and `MSG91_OTP_FLOW_ID` are set, development shows codes on screen; production refuses to send codes rather than fail silently.
