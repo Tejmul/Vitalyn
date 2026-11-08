@@ -1,15 +1,13 @@
 import { Router } from "express";
 import { z } from "zod";
-import prismaPkg from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { forbidden, HttpError, notFound } from "../lib/http.js";
 import { assertNoBannedClaims } from "../lib/claims.js";
 import { ACTIVE_STATUSES, nowHHMMIST, todayIST } from "../lib/slots.js";
 import { indianMobile } from "../lib/schemas.js";
-import { logEvent, transition } from "../lib/transitions.js";
+import { isSlotClash, logEvent, nextToken, transition, withTokenRetry } from "../lib/transitions.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
-const { Prisma } = prismaPkg;
 
 /**
  * Hospital front desk and doctor workspace.
@@ -47,10 +45,9 @@ manageRouter.get("/overview", async (req, res) => {
   const s = await scope(req.user);
   const base = { hospitalId: s.hospitalId, ...(s.doctorId ? { doctorId: s.doctorId } : {}) };
   const today = todayIST();
-  const [hospital, pending, awaitingConfirm, todayConfirmed, todayArrived, upcomingEvents, doctors] = await Promise.all([
+  const [hospital, pending, todayConfirmed, todayArrived, upcomingEvents, doctors] = await Promise.all([
     prisma.hospital.findUnique({ where: { id: s.hospitalId }, select: { id: true, name: true, slug: true, city: true } }),
-    prisma.appointment.count({ where: { ...base, status: "PENDING" } }),
-    prisma.appointment.count({ where: { ...base, status: "DOCTOR_APPROVED" } }),
+    prisma.appointment.count({ where: { ...base, status: { in: ["PENDING", "DOCTOR_APPROVED"] } } }),
     prisma.appointment.count({ where: { ...base, status: "CONFIRMED", date: today } }),
     prisma.appointment.count({ where: { ...base, status: "COMPLETED", date: today } }),
     prisma.event.count({ where: { hospitalId: s.hospitalId, startsAt: { gte: new Date() } } }),
@@ -60,7 +57,7 @@ manageRouter.get("/overview", async (req, res) => {
     hospital,
     role: req.user.role,
     today,
-    counts: { pending, awaitingConfirm, todayConfirmed, todayArrived, upcomingEvents, doctors },
+    counts: { pending, todayConfirmed, todayArrived, upcomingEvents, doctors },
   });
 });
 
@@ -90,13 +87,12 @@ manageRouter.post("/appointments/:id/action", async (req, res) => {
   const s = await scope(req.user);
   const { action, note } = z
     .object({
-      // "complete" kept as an alias of "arrive" for older clients
-      action: z.enum(["approve", "confirm", "reject", "arrive", "complete", "no_show"]).transform((a) => (a === "complete" ? "arrive" : a)),
+      action: z.enum(["accept", "reject", "arrive", "no_show"]),
       note: z.string().trim().max(300).optional(),
     })
     .parse(req.body);
-  const updated = await prisma.$transaction((tx) =>
-    transition(tx, String(req.params.id), action, { actorId: req.user.id, role: req.user.role, note, scope: s }),
+  const updated = await withTokenRetry(() =>
+    prisma.$transaction((tx) => transition(tx, String(req.params.id), action, { actorId: req.user.id, role: req.user.role, note, scope: s })),
   );
   res.json({ appointment: await prisma.appointment.findUnique({ where: { id: updated.id }, include: apptInclude }) });
 });
@@ -138,7 +134,6 @@ manageRouter.post("/walk-ins", requireRole("HOSPITAL"), async (req, res) => {
     const time = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
     try {
       const appt = await prisma.$transaction(async (tx) => {
-        const last = await tx.appointment.aggregate({ where: { doctorId: doctor.id, date, tokenNumber: { not: null } }, _max: { tokenNumber: true } });
         const a = await tx.appointment.create({
           data: {
             date,
@@ -148,7 +143,7 @@ manageRouter.post("/walk-ins", requireRole("HOSPITAL"), async (req, res) => {
             walkIn: true,
             walkInPhone: data.phone,
             status: "CONFIRMED",
-            tokenNumber: (last._max.tokenNumber ?? 0) + 1,
+            tokenNumber: await nextToken(tx, doctor.id, date),
             doctorId: doctor.id,
             hospitalId: s.hospitalId,
           },
@@ -159,7 +154,7 @@ manageRouter.post("/walk-ins", requireRole("HOSPITAL"), async (req, res) => {
       });
       return res.status(201).json({ appointment: appt });
     } catch (e) {
-      if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")) throw e;
+      if (!isSlotClash(e)) throw e; // that minute is taken: try the next one
       m += 1;
       if (m === 60) [h, m] = [h + 1, 0];
       if (h > 23) break;
@@ -216,7 +211,7 @@ manageRouter.patch("/doctors/:id", requireRole("HOSPITAL"), async (req, res) => 
     .object({
       ...Object.fromEntries(Object.entries(doctorProfile).map(([k, v]) => [k, v.optional()])),
       active: z.boolean().optional(),
-      autoApprove: z.boolean().optional(),
+      autoConfirm: z.boolean().optional(),
       workingDays: z.array(z.number().int().min(0).max(6)).max(7).optional(),
       startTime: hhmm.optional(),
       endTime: hhmm.optional(),

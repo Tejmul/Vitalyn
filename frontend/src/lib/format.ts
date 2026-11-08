@@ -1,8 +1,9 @@
 import type { AppointmentStatus, EventType } from "./types";
 
 export const STATUS: Record<AppointmentStatus, { label: string; tone: "amber" | "blue" | "green" | "grey" | "red"; help: string }> = {
-  PENDING: { label: "Waiting for doctor", tone: "amber", help: "The doctor will review your request" },
-  DOCTOR_APPROVED: { label: "Doctor approved", tone: "blue", help: "The hospital desk will confirm and give you a token" },
+  PENDING: { label: "Waiting for approval", tone: "amber", help: "The hospital or the doctor will accept your request" },
+  // Legacy status from the old two-step flow; treated like PENDING
+  DOCTOR_APPROVED: { label: "Waiting for approval", tone: "amber", help: "The hospital or the doctor will accept your request" },
   CONFIRMED: { label: "Confirmed", tone: "green", help: "Show your token at the hospital desk" },
   COMPLETED: { label: "Arrived", tone: "grey", help: "Visit completed" },
   REJECTED: { label: "Not accepted", tone: "red", help: "Please pick another slot or doctor" },

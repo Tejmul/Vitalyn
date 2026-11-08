@@ -44,7 +44,7 @@ Vitalyn has four kinds of users. Everything is done with buttons, because the pe
 |---|---|
 | **Patient** | Find hospitals nearest first (GPS, city, area or PIN code), see distance, travel time and the next free slot, book a slot in three taps, book for up to 6 family members, move or cancel a booking, follow each approval step, see the token, get in-app updates, download or delete their data |
 | **Hospital desk** | Add and edit **doctors** (with council/HPR registration number), work from a **Today** queue sorted by token, approve / confirm / reject (with a one-tap reason), mark **Arrived**, **Didn't come** or **Paid**, add a **walk-in** in two taps, set each doctor's OPD days and hours, mark a doctor **on leave**, post health camps and events |
-| **Doctor** | See only their own patients, approve or reject requests, mark themselves on leave |
+| **Doctor** | See only their own patients, accept or reject requests (when not on auto-confirm), mark themselves on leave |
 | **Platform admin** | Review **hospital applications** from /list-your-hospital, run **sponsored hospital** promotions (with priority, dates and pause), verify hospitals and record their registration and ABDM HFR IDs, see bookings, cancellations, no-shows and expiries per hospital |
 
 ## Screenshots
@@ -96,24 +96,22 @@ flowchart LR
 
 ```mermaid
 stateDiagram-v2
-  [*] --> PENDING: patient books
-  [*] --> DOCTOR_APPROVED: doctor has auto-approve on
-  PENDING --> DOCTOR_APPROVED: doctor approves
-  DOCTOR_APPROVED --> CONFIRMED: desk confirms, token issued
+  [*] --> CONFIRMED: patient books (doctor on auto-confirm), token issued
+  [*] --> PENDING: patient books (manual approval)
+  PENDING --> CONFIRMED: desk or doctor accepts, token issued
   PENDING --> REJECTED: rejected with reason
-  DOCTOR_APPROVED --> REJECTED
-  PENDING --> EXPIRED: no reply by deadline
-  DOCTOR_APPROVED --> EXPIRED
+  PENDING --> EXPIRED: nobody replied by the deadline
   PENDING --> CANCELLED: patient cancels / doctor on leave
-  DOCTOR_APPROVED --> CANCELLED
-  CONFIRMED --> CANCELLED
+  CONFIRMED --> CANCELLED: patient cancels / doctor on leave
   CONFIRMED --> COMPLETED: arrived
   CONFIRMED --> NO_SHOW: didn't come
 ```
 
 - **One place for every move.** `backend/src/lib/transitions.js` checks each status change, assigns tokens, writes an `AppointmentEvent` audit row and queues a patient update.
 - **No double booking.** PostgreSQL partial unique indexes allow only one active booking per doctor slot and one token number per doctor per day. Two people pressing "Book" at the same moment get one booking and one "slot just taken" message.
-- **Deadlines.** A request must be confirmed by the earlier of 2 hours after booking or 2 hours before the slot (never less than 15 minutes). A background job expires late requests and tells the patient.
+- **One approver per doctor.** Doctors are on **auto-confirm** by default: the booking is confirmed and the token issued at once. Turn it off and either the desk or the doctor taps Accept or Reject.
+- **Tokens never collide.** Token numbers are assigned under a per-doctor, per-day PostgreSQL advisory lock, and a unique index backs it up.
+- **Deadlines.** A manual-approval request must be accepted by the earlier of 2 hours after booking or 2 hours before the slot (never less than 15 minutes). A background job expires late requests and tells the patient.
 - **Reschedule safely.** Moving a booking is a single update, so the old slot is released only if the new one is free.
 - **Walk-ins** take the next token in the same queue as online bookings.
 
@@ -222,11 +220,13 @@ Base URL `/api`. Authenticated routes need `Authorization: Bearer <token>`. Erro
 |---|---|---|---|
 | GET | `/manage/overview` | hospital, doctor | counts for the top tiles |
 | GET | `/manage/appointments?status&date` | hospital, doctor | doctors see only their own |
-| POST | `/manage/appointments/:id/action` | hospital, doctor | `approve` · `confirm` · `reject` · `arrive` · `no_show` |
+| POST | `/manage/appointments/:id/action` | hospital, doctor | `accept` (issues the token) · `reject` · `arrive` · `no_show` |
 | POST | `/manage/appointments/:id/paid` | hospital | fee collected |
 | POST | `/manage/walk-ins` | hospital | `doctorId`, `name`, `phone?`, `age?` → next token |
 | GET | `/manage/doctors` | hospital, doctor | with upcoming leave |
-| PATCH | `/manage/doctors/:id` | hospital | OPD days, hours, slot length, auto-approve |
+| POST | `/manage/doctors` | hospital | add a doctor (name, speciality, qualification, fee, languages, registration no.) |
+| PATCH | `/manage/doctors/:id` | hospital | OPD days, hours, slot length, auto-confirm, details, stop/resume bookings |
+| GET / PATCH | `/manage/hospital` | hospital | the hospital's own profile |
 | POST / DELETE | `/manage/doctors/:id/leave` | hospital, doctor | cancels that day's bookings and notifies patients |
 | GET / POST / DELETE | `/manage/events` | hospital | health camps, drives, talks |
 

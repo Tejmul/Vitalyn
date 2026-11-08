@@ -8,7 +8,7 @@ import { Eyebrow } from "./Reveal";
 const STEPS = [
   { title: "Find a hospital near you", body: "We sort hospitals by how far they are from you, with travel time, ratings and the doctors on duty." },
   { title: "Pick a time that suits you", body: "Tap a date, tap a free slot. Booking for your parents or kids? Tap their name." },
-  { title: "The doctor says yes", body: "Your request goes to the doctor first, then the hospital desk confirms it. You see each step live." },
+  { title: "The hospital confirms", body: "Most bookings are confirmed instantly. Some doctors check each request first; you see the answer live." },
   { title: "Show your token at the desk", body: "Your token number lands on your phone. Walk in at your time and skip the registration queue." },
 ];
 
@@ -81,8 +81,8 @@ function ScreenSlots() {
 function ScreenApproval() {
   const steps = [
     { t: "Request sent", s: "Tue 10 Nov, 10:30 AM", done: true },
-    { t: "Doctor approved", s: "Dr. Kavita Shah", done: true, live: true },
-    { t: "Hospital confirms", s: "Front desk, usually within an hour", done: false },
+    { t: "Accepted, token issued", s: "Sabarmati Care front desk", done: true, live: true },
+    { t: "Reminder before your visit", s: "By text message", done: false },
   ];
   return (
     <div>
@@ -107,7 +107,7 @@ function ScreenApproval() {
         ))}
       </ol>
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="mt-5 rounded-2xl bg-sky p-3 text-[11.5px] text-blue-deep">
-        We&apos;ll message you on WhatsApp when the desk confirms.
+        We&apos;ll text you if anything changes.
       </motion.div>
     </div>
   );

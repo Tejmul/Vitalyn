@@ -75,7 +75,7 @@ export interface Doctor {
   startTime: string;
   endTime: string;
   slotMinutes: number;
-  autoApprove: boolean;
+  autoConfirm: boolean;
   registrationNo: string | null;
   active: boolean;
   leaveDates?: string[];

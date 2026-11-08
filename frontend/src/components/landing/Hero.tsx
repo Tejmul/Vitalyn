@@ -143,7 +143,7 @@ export function Hero() {
             transition={{ duration: 0.7, delay: 1, ease }}
             className="mt-6 max-w-[540px] text-[17.5px] leading-relaxed text-muted"
           >
-            See hospitals near you and how far they are. Pick a time, and your token arrives on your phone once the doctor says yes. Pay at the hospital as usual.
+            See hospitals near you and how far they are. Pick a time, and your token arrives on your phone as soon as the hospital confirms. Pay at the hospital as usual.
           </motion.p>
 
           <motion.div

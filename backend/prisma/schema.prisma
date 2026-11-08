@@ -124,8 +124,9 @@ model Doctor {
   startTime   String  @default("09:00")
   endTime     String  @default("13:00")
   slotMinutes Int     @default(15)
-  // When true, bookings skip doctor approval (hospital still confirms)
-  autoApprove Boolean @default(false)
+  // One approver per doctor: when true (default) bookings are confirmed instantly with a token;
+  // when false the desk or the doctor accepts each request.
+  autoConfirm Boolean @default(true)
   // State medical council or ABDM HPR registration number, checked by the platform admin
   registrationNo String?
   // Inactive doctors disappear from booking but keep their history
@@ -292,8 +293,10 @@ enum Role {
   ADMIN
 }
 
-// PENDING -> DOCTOR_APPROVED -> CONFIRMED -> COMPLETED (arrived)
-//         \-> REJECTED / EXPIRED          \-> CANCELLED / NO_SHOW
+// PENDING --accept--> CONFIRMED (token) -> COMPLETED (arrived) / NO_SHOW
+//    \-> REJECTED / EXPIRED / CANCELLED      \-> CANCELLED
+// Auto-confirm doctors skip PENDING. DOCTOR_APPROVED is legacy (old two-step flow): no longer
+// produced, kept only so earlier audit rows stay readable.
 enum AppointmentStatus {
   PENDING
   DOCTOR_APPROVED

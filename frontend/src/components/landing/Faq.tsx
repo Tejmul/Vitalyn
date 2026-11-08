@@ -6,7 +6,7 @@ import { Eyebrow, Reveal } from "./Reveal";
 
 const QA = [
   ["Is Vitalyn free for patients?", "Yes. You pay the doctor's consultation fee at the hospital, the same as walking in. We show the fee before you book."],
-  ["What happens after I book?", "Your request goes to the doctor. Once they approve, the hospital desk confirms it and gives you a token number. You can follow each step in your dashboard."],
+  ["What happens after I book?", "Most doctors confirm instantly and you get your token straight away. Some doctors check each request first: the hospital or the doctor accepts it, and you see the token in My bookings. If nobody replies in time, the request expires and we tell you."],
   ["What if the doctor can't see me?", "You'll see 'Not accepted' with a reason, and your slot is freed. If the hospital doesn't reply in time, the request expires and we tell you straight away. Pick another time with one tap."],
   ["Can I book for my mother or father?", "Yes. When you book, type the patient's name and age. All family bookings stay together in your account."],
   ["Can I cancel or change the time?", "Cancel any time before your visit. Press Move to pick a new time, up to 2 hours before. Your old slot is only released once the new one is yours."],

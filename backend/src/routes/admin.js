@@ -18,7 +18,7 @@ adminRouter.get("/overview", async (_req, res) => {
     prisma.hospital.count(),
     prisma.doctor.count(),
     prisma.appointment.count(),
-    prisma.appointment.count({ where: { status: { in: ["PENDING", "DOCTOR_APPROVED"] } } }),
+    prisma.appointment.count({ where: { status: { in: ["PENDING", "DOCTOR_APPROVED"] } } }), // waiting for approval
     prisma.promotion.count({ where: { active: true, startsAt: { lte: now }, endsAt: { gte: now } } }),
     prisma.appointment.groupBy({ by: ["status"], _count: { _all: true } }),
     prisma.hospitalApplication.count({ where: { status: "PENDING" } }),

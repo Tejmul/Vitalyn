@@ -1,13 +1,12 @@
 import { Router } from "express";
 import { z } from "zod";
-import prismaPkg from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { HttpError, notFound } from "../lib/http.js";
 import { ACTIVE_STATUSES, isPast, slotStart, slotsForDay } from "../lib/slots.js";
-import { approveDeadline, logEvent, transition } from "../lib/transitions.js";
+import { MESSAGES, approveDeadline, isSlotClash, logEvent, nextToken, transition, withTokenRetry } from "../lib/transitions.js";
+import { notify } from "../lib/notify.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
-const { Prisma } = prismaPkg;
 
 /** Patient-side appointments. */
 export const appointmentsRouter = Router();
@@ -33,7 +32,7 @@ async function assertBookable(doctor, date, time) {
   if (isPast(date, time)) throw new HttpError(400, "That slot has already passed. Pick a later one");
 }
 
-const slotTaken = (e) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
+const slotTaken = isSlotClash;
 
 appointmentsRouter.post("/", async (req, res) => {
   const data = z
@@ -54,27 +53,32 @@ appointmentsRouter.post("/", async (req, res) => {
   await assertBookable(doctor, data.date, data.time);
 
   try {
-    const appt = await prisma.$transaction(async (tx) => {
-      const status = doctor.autoApprove ? "DOCTOR_APPROVED" : "PENDING";
-      const a = await tx.appointment.create({
-        data: {
-          date: data.date,
-          time: data.time,
-          reason: data.reason,
-          patientName: profile.name,
-          patientAge: profile.age,
-          profileId: profile.id,
-          userId: req.user.id,
-          doctorId: doctor.id,
-          hospitalId: doctor.hospitalId,
-          status,
-          approveBy: approveDeadline(data.date, data.time),
-        },
-        include,
-      });
-      await logEvent(tx, a.id, { action: "book", to: status, actorId: req.user.id });
-      return a;
-    });
+    // Auto-confirm doctors: confirmed with a token straight away. Otherwise it waits for one approver.
+    const appt = await withTokenRetry(() =>
+      prisma.$transaction(async (tx) => {
+        const confirmed = doctor.autoConfirm;
+        const a = await tx.appointment.create({
+          data: {
+            date: data.date,
+            time: data.time,
+            reason: data.reason,
+            patientName: profile.name,
+            patientAge: profile.age,
+            profileId: profile.id,
+            userId: req.user.id,
+            doctorId: doctor.id,
+            hospitalId: doctor.hospitalId,
+            status: confirmed ? "CONFIRMED" : "PENDING",
+            tokenNumber: confirmed ? await nextToken(tx, doctor.id, data.date) : null,
+            approveBy: confirmed ? null : approveDeadline(data.date, data.time),
+          },
+          include,
+        });
+        await logEvent(tx, a.id, { action: "book", to: a.status, note: confirmed ? "Auto-confirmed" : null, actorId: req.user.id });
+        if (confirmed) await notify(tx, req.user.id, { ...MESSAGES.confirmed(a, doctor), appointmentId: a.id });
+        return a;
+      }),
+    );
     res.status(201).json({ appointment: appt });
   } catch (e) {
     // The partial unique index on (doctorId, date, time) for active bookings fires here
@@ -116,16 +120,28 @@ appointmentsRouter.post("/:id/reschedule", async (req, res) => {
   await assertBookable(appt.doctor, date, time);
 
   try {
-    const updated = await prisma.$transaction(async (tx) => {
-      const status = appt.doctor.autoApprove ? "DOCTOR_APPROVED" : "PENDING";
-      const u = await tx.appointment.update({
-        where: { id: appt.id },
-        data: { date, time, status, tokenNumber: null, note: null, approveBy: approveDeadline(date, time) },
-        include,
-      });
-      await logEvent(tx, appt.id, { action: "reschedule", from: appt.status, to: status, note: `${appt.date} ${appt.time} → ${date} ${time}`, actorId: req.user.id });
-      return u;
-    });
+    const updated = await withTokenRetry(() =>
+      prisma.$transaction(async (tx) => {
+        const confirmed = appt.doctor.autoConfirm;
+        const u = await tx.appointment.update({
+          where: { id: appt.id },
+          data: {
+            date,
+            time,
+            status: confirmed ? "CONFIRMED" : "PENDING",
+            // Clear first so the old token doesn't count when numbering the new day
+            tokenNumber: null,
+            note: null,
+            approveBy: confirmed ? null : approveDeadline(date, time),
+          },
+        });
+        const token = confirmed ? await nextToken(tx, appt.doctorId, date) : null;
+        const final = token ? await tx.appointment.update({ where: { id: u.id }, data: { tokenNumber: token }, include }) : await tx.appointment.findUnique({ where: { id: u.id }, include });
+        await logEvent(tx, appt.id, { action: "reschedule", from: appt.status, to: final.status, note: `${appt.date} ${appt.time} → ${date} ${time}`, actorId: req.user.id });
+        if (confirmed) await notify(tx, req.user.id, { ...MESSAGES.confirmed(final, appt.doctor), appointmentId: appt.id });
+        return final;
+      }),
+    );
     res.json({ appointment: updated });
   } catch (e) {
     if (slotTaken(e)) throw new HttpError(409, "That slot was just taken. Please pick another time");

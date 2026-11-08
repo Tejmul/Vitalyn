@@ -2,7 +2,7 @@ import { prisma } from "../lib/prisma.js";
 import { transition } from "../lib/transitions.js";
 
 /**
- * Every minute: requests nobody approved or confirmed by their deadline expire,
+ * Every minute: manual-approval requests nobody accepted by their deadline expire,
  * their slot is released and the patient is told. (For multiple API instances, move this
  * to a single worker or BullMQ.)
  */

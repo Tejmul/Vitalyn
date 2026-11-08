@@ -9,7 +9,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { usePlace } from "@/lib/location";
 import { useApi } from "@/lib/useApi";
-import { dayLabel, doctorHours, inr, km, nextDays, nextSlotLabel, time12 } from "@/lib/format";
+import { dayLabel, doctorHours, inr, km, nextDays, nextSlotLabel, time12, tokenCode } from "@/lib/format";
 import type { Appointment, Doctor, Hospital, HospitalEvent } from "@/lib/types";
 import { HospitalTile } from "@/components/ui/HospitalTile";
 import { Button, ButtonLink } from "@/components/ui/Button";
@@ -213,12 +213,19 @@ function BookingPanel({ doctor, hospitalSlug }: { doctor: Doctor | null; hospita
     return (
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="rounded-[26px] bg-white p-6 text-center ring-1 ring-line">
         <CheckCircle2 className="mx-auto size-12 text-signal" />
-        <p className="mt-3 font-display text-[22px] font-bold tracking-[-0.03em]">Request sent</p>
-        <p className="mt-1 text-[14.5px] text-muted">
-          {done.status === "DOCTOR_APPROVED"
-            ? "This doctor accepts bookings automatically. The hospital desk will confirm and give you a token."
-            : `${doctor.name} will review your request. You'll see each update in your bookings.`}
-        </p>
+        {done.status === "CONFIRMED" ? (
+          <>
+            <p className="mt-3 font-display text-[22px] font-bold tracking-[-0.03em]">Booked</p>
+            <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.18em] text-muted">Your token</p>
+            <p className="font-mono text-[52px] font-bold leading-none text-blue">{tokenCode(done.tokenNumber, doctor.name)}</p>
+            <p className="mt-2 text-[14.5px] text-muted">Show this at the desk and pay {inr(doctor.fee)} there.</p>
+          </>
+        ) : (
+          <>
+            <p className="mt-3 font-display text-[22px] font-bold tracking-[-0.03em]">Request sent</p>
+            <p className="mt-1 text-[14.5px] text-muted">The hospital or {doctor.name} will accept it. Your token appears in My bookings as soon as they do.</p>
+          </>
+        )}
         <div className="mt-4 rounded-2xl bg-mist p-4 text-left text-[14px]">
           <p>
             <b>{dayLabel(done.date)}</b> at <b>{time12(done.time)}</b>
