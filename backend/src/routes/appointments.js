@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { HttpError, notFound } from "../lib/http.js";
 import { ACTIVE_STATUSES, isPast, slotStart, slotsForDay } from "../lib/slots.js";
-import { MESSAGES, approveDeadline, isSlotClash, logEvent, nextToken, transition, withTokenRetry } from "../lib/transitions.js";
+import { MESSAGES, approveDeadline, isSlotClash, logEvent, nextToken, smsVars, transition, withTokenRetry } from "../lib/transitions.js";
 import { notify } from "../lib/notify.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -75,7 +75,9 @@ appointmentsRouter.post("/", async (req, res) => {
           include,
         });
         await logEvent(tx, a.id, { action: "book", to: a.status, note: confirmed ? "Auto-confirmed" : null, actorId: req.user.id });
-        if (confirmed) await notify(tx, req.user.id, { ...MESSAGES.confirmed(a, doctor), appointmentId: a.id });
+        if (confirmed) {
+          await notify(tx, req.user.id, { ...MESSAGES.confirmed(a, doctor), appointmentId: a.id, sms: { kind: "CONFIRMED", vars: smsVars(a, doctor, a.hospital) } });
+        }
         return a;
       }),
     );
@@ -138,7 +140,9 @@ appointmentsRouter.post("/:id/reschedule", async (req, res) => {
         const token = confirmed ? await nextToken(tx, appt.doctorId, date) : null;
         const final = token ? await tx.appointment.update({ where: { id: u.id }, data: { tokenNumber: token }, include }) : await tx.appointment.findUnique({ where: { id: u.id }, include });
         await logEvent(tx, appt.id, { action: "reschedule", from: appt.status, to: final.status, note: `${appt.date} ${appt.time} → ${date} ${time}`, actorId: req.user.id });
-        if (confirmed) await notify(tx, req.user.id, { ...MESSAGES.confirmed(final, appt.doctor), appointmentId: appt.id });
+        if (confirmed) {
+          await notify(tx, req.user.id, { ...MESSAGES.confirmed(final, appt.doctor), appointmentId: appt.id, sms: { kind: "CONFIRMED", vars: smsVars(final, appt.doctor, final.hospital) } });
+        }
         return final;
       }),
     );

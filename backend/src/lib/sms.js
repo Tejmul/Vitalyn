@@ -8,12 +8,11 @@ import { config } from "../config.js";
  * Without MSG91 keys, a console sender logs the message instead (development only).
  */
 
-const MSG91_FLOW_URL = "https://control.msg91.com/api/v5/flow/";
 
 const msg91 = {
   name: "msg91",
   async send({ flowId, mobile, vars }) {
-    const res = await fetch(MSG91_FLOW_URL, {
+    const res = await fetch(`${config.msg91.baseUrl}/api/v5/flow/`, {
       method: "POST",
       headers: { authkey: config.msg91.authKey, "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({
@@ -44,4 +43,16 @@ export const otpSmsLive = () => Boolean(config.msg91.authKey && config.msg91.otp
 
 export function smsSender() {
   return config.msg91.authKey ? msg91 : consoleSender;
+}
+
+/**
+ * Which template a message type uses, or why it can't be sent.
+ * Returns { flowId } or { skip: "reason" }.
+ */
+export function templateFor(kind) {
+  if (!config.msg91.authKey) {
+    return config.isProd ? { skip: "SMS isn't configured (MSG91_AUTH_KEY missing)" } : { flowId: `dev:${kind}` };
+  }
+  const flowId = config.msg91.flows[kind];
+  return flowId ? { flowId } : { skip: `No MSG91 template set for ${kind} (MSG91_FLOW_${kind})` };
 }

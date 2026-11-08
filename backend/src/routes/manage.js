@@ -5,7 +5,8 @@ import { forbidden, HttpError, notFound } from "../lib/http.js";
 import { assertNoBannedClaims } from "../lib/claims.js";
 import { ACTIVE_STATUSES, nowHHMMIST, todayIST } from "../lib/slots.js";
 import { indianMobile } from "../lib/schemas.js";
-import { isSlotClash, logEvent, nextToken, transition, withTokenRetry } from "../lib/transitions.js";
+import { isSlotClash, logEvent, nextToken, smsVars, transition, withTokenRetry } from "../lib/transitions.js";
+import { queueSms } from "../lib/notify.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 
@@ -150,6 +151,11 @@ manageRouter.post("/walk-ins", requireRole("HOSPITAL"), async (req, res) => {
           include: apptInclude,
         });
         await logEvent(tx, a.id, { action: "walk_in", to: "CONFIRMED", actorId: req.user.id });
+        // Walk-ins with a mobile get their token by text too
+        if (data.phone) {
+          const hospital = await tx.hospital.findUnique({ where: { id: s.hospitalId }, select: { name: true } });
+          await queueSms(tx, { phone: data.phone, kind: "CONFIRMED", vars: smsVars(a, doctor, hospital), appointmentId: a.id });
+        }
         return a;
       });
       return res.status(201).json({ appointment: appt });

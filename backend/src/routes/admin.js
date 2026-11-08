@@ -221,3 +221,34 @@ adminRouter.post("/applications/:id/reject", async (req, res) => {
   });
   res.json({ application: updated });
 });
+
+/* ---------------- Text messages ---------------- */
+
+/** Delivery health for the last 7 days, plus SMS per booking (the cost driver) and recent problems. */
+adminRouter.get("/messages", async (_req, res) => {
+  const since = new Date(Date.now() - 7 * 86_400_000);
+  const [byStatus, byKind, bookings, problems] = await Promise.all([
+    prisma.outboundMessage.groupBy({ by: ["status"], where: { createdAt: { gte: since } }, _count: { _all: true } }),
+    prisma.outboundMessage.groupBy({ by: ["kind", "status"], where: { createdAt: { gte: since } }, _count: { _all: true } }),
+    prisma.appointment.count({ where: { createdAt: { gte: since } } }),
+    prisma.outboundMessage.findMany({
+      where: { status: { in: ["FAILED", "SKIPPED"] }, createdAt: { gte: since } },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: { id: true, kind: true, phone: true, status: true, attempts: true, lastError: true, createdAt: true },
+    }),
+  ]);
+  const status = Object.fromEntries(byStatus.map((r) => [r.status, r._count._all]));
+  const kinds = {};
+  for (const r of byKind) (kinds[r.kind] ??= {})[r.status] = r._count._all;
+  const sent = status.SENT ?? 0;
+  res.json({
+    since,
+    status,
+    kinds,
+    bookings,
+    smsPerBooking: bookings ? Math.round((sent / bookings) * 100) / 100 : 0,
+    // Mask numbers in admin lists (DPDP: show only what's needed)
+    problems: problems.map((p) => ({ ...p, phone: `${p.phone.slice(0, 2)}******${p.phone.slice(-2)}` })),
+  });
+});
