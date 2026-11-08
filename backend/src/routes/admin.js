@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { notFound } from "../lib/http.js";
+import { HttpError, notFound } from "../lib/http.js";
+import { toneFor, uniqueSlug } from "../lib/slug.js";
 import { assertNoBannedClaims } from "../lib/claims.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -12,7 +13,7 @@ adminRouter.use(requireAuth, requireRole("ADMIN"));
 
 adminRouter.get("/overview", async (_req, res) => {
   const now = new Date();
-  const [users, hospitals, doctors, appointments, pending, activePromotions, byStatus] = await Promise.all([
+  const [users, hospitals, doctors, appointments, pending, activePromotions, byStatus, applications] = await Promise.all([
     prisma.user.count({ where: { role: "USER" } }),
     prisma.hospital.count(),
     prisma.doctor.count(),
@@ -20,9 +21,10 @@ adminRouter.get("/overview", async (_req, res) => {
     prisma.appointment.count({ where: { status: { in: ["PENDING", "DOCTOR_APPROVED"] } } }),
     prisma.promotion.count({ where: { active: true, startsAt: { lte: now }, endsAt: { gte: now } } }),
     prisma.appointment.groupBy({ by: ["status"], _count: { _all: true } }),
+    prisma.hospitalApplication.count({ where: { status: "PENDING" } }),
   ]);
   res.json({
-    counts: { users, hospitals, doctors, appointments, pending, activePromotions },
+    counts: { users, hospitals, doctors, appointments, pending, activePromotions, applications },
     byStatus: Object.fromEntries(byStatus.map((r) => [r.status, r._count._all])),
   });
 });
@@ -138,4 +140,89 @@ adminRouter.delete("/promotions/:id", async (req, res) => {
   if (!p) throw notFound("Promotion");
   await prisma.promotion.delete({ where: { id: p.id } });
   res.status(204).end();
+});
+
+/* ---------------- Hospital applications ---------------- */
+
+adminRouter.get("/applications", async (req, res) => {
+  const { status } = z.object({ status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional() }).parse(req.query);
+  const applications = await prisma.hospitalApplication.findMany({
+    where: status ? { status } : {},
+    orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+    take: 100,
+  });
+  res.json({ applications });
+});
+
+/**
+ * Approve: creates the hospital (live and verified) and the desk account the applicant
+ * asked for, in one transaction. The applicant logs in with their mobile number by OTP.
+ */
+adminRouter.post("/applications/:id/approve", async (req, res) => {
+  const app = await prisma.hospitalApplication.findUnique({ where: { id: String(req.params.id) } });
+  if (!app) throw notFound("Application");
+  if (app.status !== "PENDING") throw new HttpError(409, `This application was already ${app.status.toLowerCase()}`);
+  const clash = await prisma.user.findFirst({ where: { OR: [{ email: app.contactEmail }, { phone: app.contactPhone }] } });
+  if (clash) throw new HttpError(409, "The applicant's email or mobile is now used by another account. Reject and ask them to reapply");
+
+  const slug = await uniqueSlug(`${app.hospitalName} ${app.city}`, async (s) => Boolean(await prisma.hospital.findUnique({ where: { slug: s } })));
+  const username = await uniqueSlug(app.contactEmail.split("@")[0].replace(/[^a-z0-9]/gi, "_"), async (u) =>
+    Boolean(await prisma.user.findUnique({ where: { username: u.replace(/-/g, "_") } })),
+  );
+
+  const result = await prisma.$transaction(async (tx) => {
+    const hospital = await tx.hospital.create({
+      data: {
+        slug,
+        name: app.hospitalName,
+        description: app.description,
+        address: app.address,
+        city: app.city,
+        state: app.state,
+        pincode: app.pincode,
+        phone: app.phone,
+        lat: app.lat,
+        lng: app.lng,
+        specialties: app.specialties,
+        beds: app.beds ?? 0,
+        emergency24x7: app.emergency24x7,
+        registrationNo: app.registrationNo,
+        hfrId: app.hfrId,
+        tone: toneFor(app.hospitalName),
+        rating: 0,
+        reviewCount: 0,
+        verified: true,
+      },
+    });
+    const user = await tx.user.create({
+      data: {
+        name: app.contactName,
+        email: app.contactEmail,
+        username: username.replace(/-/g, "_").slice(0, 24),
+        phone: app.contactPhone,
+        role: "HOSPITAL",
+        hospitalId: hospital.id,
+        consentAt: app.consentAt,
+        consentVersion: "hospital-terms-2026-11",
+      },
+    });
+    await tx.hospitalApplication.update({
+      where: { id: app.id },
+      data: { status: "APPROVED", reviewedAt: new Date(), reviewedById: req.user.id, hospitalId: hospital.id },
+    });
+    return { hospital: { id: hospital.id, slug: hospital.slug, name: hospital.name }, deskLogin: user.phone };
+  });
+  res.json(result);
+});
+
+adminRouter.post("/applications/:id/reject", async (req, res) => {
+  const { note } = z.object({ note: z.string().trim().min(3, "Give the applicant a reason").max(300) }).parse(req.body);
+  const app = await prisma.hospitalApplication.findUnique({ where: { id: String(req.params.id) } });
+  if (!app) throw notFound("Application");
+  if (app.status !== "PENDING") throw new HttpError(409, `This application was already ${app.status.toLowerCase()}`);
+  const updated = await prisma.hospitalApplication.update({
+    where: { id: app.id },
+    data: { status: "REJECTED", reviewNote: note, reviewedAt: new Date(), reviewedById: req.user.id },
+  });
+  res.json({ application: updated });
 });
