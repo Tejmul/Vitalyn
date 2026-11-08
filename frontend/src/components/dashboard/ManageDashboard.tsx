@@ -19,7 +19,7 @@ type Overview = {
   counts: { pending: number; awaitingConfirm: number; todayConfirmed: number; todayArrived: number; upcomingEvents: number; doctors: number };
 };
 type Tab = "today" | "action" | "upcoming" | "all";
-type Action = "approve" | "confirm" | "reject" | "arrive" | "no_show";
+type Action = "accept" | "reject" | "arrive" | "no_show";
 
 const REJECT_REASONS = ["Fully booked", "Doctor on leave", "Needs a referral", "Wrong speciality"];
 
@@ -68,11 +68,11 @@ export function ManageDashboard({ role }: { role: Extract<Role, "HOSPITAL" | "DO
     const today = ov?.today;
     return {
       today: all.filter((a) => a.date === today && ["CONFIRMED", "COMPLETED", "NO_SHOW"].includes(a.status)).sort((a, b) => (a.tokenNumber ?? 0) - (b.tokenNumber ?? 0) || a.time.localeCompare(b.time)),
-      action: all.filter((a) => a.status === "PENDING" || (a.status === "DOCTOR_APPROVED" && role === "HOSPITAL")),
+      action: all.filter((a) => a.status === "PENDING" || a.status === "DOCTOR_APPROVED"),
       upcoming: all.filter((a) => a.status === "CONFIRMED" && a.date !== today),
       all,
     };
-  }, [appts, role, ov?.today]);
+  }, [appts, ov?.today]);
   const rows = lists[tab];
 
   return (
@@ -90,10 +90,10 @@ export function ManageDashboard({ role }: { role: Extract<Role, "HOSPITAL" | "DO
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Waiting for doctor" value={ov?.counts.pending ?? "–"} tone="amber" />
-        <Stat label="Waiting for desk" value={ov?.counts.awaitingConfirm ?? "–"} tone="blue" hint="Doctor said yes" />
+        <Stat label="Waiting for approval" value={ov?.counts.pending ?? "–"} tone="amber" hint="Accept or reject below" />
         <Stat label="In today's queue" value={ov?.counts.todayConfirmed ?? "–"} tone="green" />
         <Stat label="Arrived today" value={ov?.counts.todayArrived ?? "–"} />
+        <Stat label="Upcoming events" value={ov?.counts.upcomingEvents ?? "–"} tone="blue" />
       </div>
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -161,27 +161,16 @@ export function ManageDashboard({ role }: { role: Extract<Role, "HOSPITAL" | "DO
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {a.status === "PENDING" && (
+                    {(a.status === "PENDING" || a.status === "DOCTOR_APPROVED") && (
                       <>
-                        <Button onClick={() => act(a.id, "approve")} loading={busy === a.id + "approve"}>
-                          {role === "DOCTOR" ? "Approve" : "Doctor approved"}
+                        <Button variant="success" onClick={() => act(a.id, "accept")} loading={busy === a.id + "accept"}>
+                          Accept & give token
                         </Button>
                         <Button variant="danger" onClick={() => setRejecting(a.id)}>
                           Reject
                         </Button>
                       </>
                     )}
-                    {a.status === "DOCTOR_APPROVED" && role === "HOSPITAL" && (
-                      <>
-                        <Button variant="success" onClick={() => act(a.id, "confirm")} loading={busy === a.id + "confirm"}>
-                          Confirm & give token
-                        </Button>
-                        <Button variant="danger" onClick={() => setRejecting(a.id)}>
-                          Reject
-                        </Button>
-                      </>
-                    )}
-                    {a.status === "DOCTOR_APPROVED" && role === "DOCTOR" && <span className="text-[13px] text-muted">Waiting for the desk</span>}
                     {a.status === "CONFIRMED" && (
                       <>
                         <Button variant="success" onClick={() => act(a.id, "arrive")} loading={busy === a.id + "arrive"}>
@@ -469,14 +458,14 @@ function DoctorsPanel({ role, doctors, today, onChange }: { role: Role; doctors:
                 <div className="flex flex-wrap gap-2">
                   {role === "HOSPITAL" && d.active && (
                     <button
-                      onClick={() => patch(d, { autoApprove: !d.autoApprove }, "auto")}
+                      onClick={() => patch(d, { autoConfirm: !d.autoConfirm }, "auto")}
                       role="switch"
-                      aria-checked={d.autoApprove}
+                      aria-checked={d.autoConfirm}
                       disabled={busy === d.id + "auto"}
-                      className={`inline-flex h-9 items-center gap-2 rounded-full pl-1 pr-3.5 text-[12.5px] font-semibold transition ${d.autoApprove ? "bg-blue text-white" : "bg-mist text-ink-2"}`}
+                      className={`inline-flex h-9 items-center gap-2 rounded-full pl-1 pr-3.5 text-[12.5px] font-semibold transition ${d.autoConfirm ? "bg-blue text-white" : "bg-mist text-ink-2"}`}
                     >
-                      <span className={`grid size-7 place-items-center rounded-full bg-white ${d.autoApprove ? "text-blue" : "text-muted"}`}>{d.autoApprove ? "✓" : "–"}</span>
-                      Auto-approve
+                      <span className={`grid size-7 place-items-center rounded-full bg-white ${d.autoConfirm ? "text-blue" : "text-muted"}`}>{d.autoConfirm ? "✓" : "–"}</span>
+                      Auto-confirm
                     </button>
                   )}
                   {d.active && !onLeaveToday && (
@@ -523,7 +512,9 @@ function DoctorsPanel({ role, doctors, today, onChange }: { role: Role; doctors:
           );
         })}
       </ul>
-      {role === "HOSPITAL" && <p className="mt-2 text-[12.5px] text-muted">With auto-approve on, bookings skip the doctor and come straight to the desk.</p>}
+      {role === "HOSPITAL" && (
+        <p className="mt-2 text-[12.5px] text-muted">Auto-confirm on: bookings are confirmed instantly with a token. Off: the desk or the doctor accepts each request, and unanswered requests expire.</p>
+      )}
     </Panel>
   );
 }
