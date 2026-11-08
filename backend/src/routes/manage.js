@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { forbidden, HttpError, notFound } from "../lib/http.js";
 import { assertNoBannedClaims } from "../lib/claims.js";
 import { ACTIVE_STATUSES, nowHHMMIST, todayIST } from "../lib/slots.js";
+import { indianMobile } from "../lib/schemas.js";
 import { logEvent, transition } from "../lib/transitions.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -29,9 +30,10 @@ async function scope(user) {
 }
 
 /** The doctor must belong to this hospital, and a DOCTOR account may only touch itself. */
-async function ownDoctor(s, doctorId) {
+async function ownDoctor(s, doctorId, { activeOnly = false } = {}) {
   const doc = await prisma.doctor.findUnique({ where: { id: doctorId } });
   if (!doc || doc.hospitalId !== s.hospitalId || (s.doctorId && s.doctorId !== doc.id)) throw notFound("Doctor");
+  if (activeOnly && !doc.active) throw new HttpError(409, `${doc.name} is not taking patients right now`);
   return doc;
 }
 
@@ -124,17 +126,11 @@ manageRouter.post("/walk-ins", requireRole("HOSPITAL"), async (req, res) => {
     .object({
       doctorId: z.string().min(1, "Pick a doctor"),
       name: z.string().trim().min(2, "Enter the patient's name").max(80),
-      phone: z
-        .string()
-        .trim()
-        .transform((v) => v.replace(/[\s-]/g, "").replace(/^(\+91|91)(?=\d{10}$)/, ""))
-        .pipe(z.string().regex(/^[6-9]\d{9}$/, "Enter a 10-digit mobile number"))
-        .optional()
-        .or(z.literal("").transform(() => undefined)),
+      phone: indianMobile.optional().or(z.literal("").transform(() => undefined)),
       age: z.coerce.number().int().min(0).max(120).optional(),
     })
     .parse(req.body);
-  const doctor = await ownDoctor(s, data.doctorId);
+  const doctor = await ownDoctor(s, data.doctorId, { activeOnly: true });
   const date = todayIST();
   let [h, m] = nowHHMMIST().split(":").map(Number);
 
@@ -176,7 +172,7 @@ manageRouter.get("/doctors", async (req, res) => {
   const s = await scope(req.user);
   const doctors = await prisma.doctor.findMany({
     where: { hospitalId: s.hospitalId, ...(s.doctorId ? { id: s.doctorId } : {}) },
-    orderBy: { name: "asc" },
+    orderBy: [{ active: "desc" }, { name: "asc" }],
     include: { leaves: { where: { date: { gte: todayIST() } }, orderBy: { date: "asc" } } },
   });
   res.json({ doctors });
@@ -184,12 +180,42 @@ manageRouter.get("/doctors", async (req, res) => {
 
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM");
 
-/** Weekly schedule, slot length and approval mode, set by the hospital with buttons. */
+const doctorProfile = {
+  name: z
+    .string()
+    .trim()
+    .min(3, "Enter the doctor's name")
+    .max(80)
+    .transform((n) => (/^dr\.?\s/i.test(n) ? n.replace(/^dr\.?\s*/i, "Dr. ") : `Dr. ${n}`)),
+  specialty: z.string().trim().min(2, "Pick a speciality").max(40),
+  qualification: z.string().trim().min(2, "Enter qualifications, e.g. MBBS, MD").max(80),
+  experienceYears: z.coerce.number().int().min(0).max(60),
+  fee: z.coerce.number().int().min(0, "Fee can't be negative").max(100000),
+  languages: z.array(z.string().trim().min(2).max(20)).min(1, "Pick at least one language").max(10),
+  // State medical council or HPR number. Checked by the platform admin.
+  registrationNo: z.string().trim().min(3, "Enter the council or HPR registration number").max(40),
+};
+
+/** Add a doctor. New doctors default to Mon–Sat, 9 AM–1 PM, 15-minute slots; the desk can change that. */
+manageRouter.post("/doctors", requireRole("HOSPITAL"), async (req, res) => {
+  const s = await scope(req.user);
+  const data = z.object(doctorProfile).parse(req.body);
+  const doctor = await prisma.doctor.create({ data: { ...data, hospitalId: s.hospitalId } });
+  const hospital = await prisma.hospital.findUnique({ where: { id: s.hospitalId }, select: { specialties: true } });
+  if (hospital && !hospital.specialties.includes(data.specialty)) {
+    await prisma.hospital.update({ where: { id: s.hospitalId }, data: { specialties: { push: data.specialty } } });
+  }
+  res.status(201).json({ doctor });
+});
+
+/** Weekly schedule, slot length, approval mode and profile details, set by the hospital with buttons. */
 manageRouter.patch("/doctors/:id", requireRole("HOSPITAL"), async (req, res) => {
   const s = await scope(req.user);
   const doc = await ownDoctor(s, String(req.params.id));
   const data = z
     .object({
+      ...Object.fromEntries(Object.entries(doctorProfile).map(([k, v]) => [k, v.optional()])),
+      active: z.boolean().optional(),
       autoApprove: z.boolean().optional(),
       workingDays: z.array(z.number().int().min(0).max(6)).max(7).optional(),
       startTime: hhmm.optional(),
@@ -239,6 +265,29 @@ manageRouter.delete("/doctors/:id/leave/:date", async (req, res) => {
   const doc = await ownDoctor(s, String(req.params.id));
   await prisma.doctorLeave.deleteMany({ where: { doctorId: doc.id, date: String(req.params.date) } });
   res.status(204).end();
+});
+
+/** The hospital's own public profile. Name, address and registry IDs are changed by the platform admin. */
+manageRouter.get("/hospital", async (req, res) => {
+  const s = await scope(req.user);
+  const hospital = await prisma.hospital.findUnique({ where: { id: s.hospitalId } });
+  res.json({ hospital });
+});
+
+manageRouter.patch("/hospital", requireRole("HOSPITAL"), async (req, res) => {
+  const s = await scope(req.user);
+  const data = z
+    .object({
+      tagline: z.string().trim().max(80).optional().nullable(),
+      description: z.string().trim().min(20, "Tell patients a little more (20+ characters)").max(600).optional(),
+      phone: z.string().trim().min(8).max(20).optional(),
+      beds: z.coerce.number().int().min(0).max(5000).optional(),
+      emergency24x7: z.boolean().optional(),
+      specialties: z.array(z.string().trim().min(2).max(40)).min(1).max(30).optional(),
+    })
+    .parse(req.body);
+  assertNoBannedClaims({ "the tagline": data.tagline, "the description": data.description });
+  res.json({ hospital: await prisma.hospital.update({ where: { id: s.hospitalId }, data }) });
 });
 
 manageRouter.get("/events", async (req, res) => {
