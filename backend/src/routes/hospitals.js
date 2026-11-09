@@ -6,6 +6,7 @@ import { distanceKm, etaMinutes } from "../lib/geo.js";
 import { ACTIVE_STATUSES, isPast, slotsForDay, todayIST } from "../lib/slots.js";
 import { SPONSOR_RULES, applySponsoredBoost, nextFreeSlots, organicScore } from "../lib/ranking.js";
 import { doctorQueue } from "../lib/queue.js";
+import { bumpPromo } from "../lib/promoStats.js";
 import { tokenCode } from "../lib/transitions.js";
 
 export const hospitalsRouter = Router();
@@ -106,7 +107,10 @@ hospitalsRouter.get("/recommendations", async (req, res) => {
     .filter((h) => !taken.has(h.id) && h.nextSlotAt)
     .sort((a, b) => (a.distanceKm ?? 0) - (b.distanceKm ?? 0));
 
-  res.json({ radiusKm, sponsorRules: SPONSOR_RULES, recommendations: [...ranked, ...farther].slice(0, 6) });
+  const recommendations = [...ranked, ...farther].slice(0, 6);
+  // Count a view for each sponsored card actually served
+  await Promise.all(recommendations.filter((h) => h.sponsored && h.promotionId).map((h) => bumpPromo(prisma, h.promotionId, "impressions")));
+  res.json({ radiusKm, sponsorRules: SPONSOR_RULES, recommendations });
 });
 
 /** Visible verified reviews, newest first. Reviewers appear as first name + initial. */
