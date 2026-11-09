@@ -109,6 +109,27 @@ hospitalsRouter.get("/recommendations", async (req, res) => {
   res.json({ radiusKm, sponsorRules: SPONSOR_RULES, recommendations: [...ranked, ...farther].slice(0, 6) });
 });
 
+/** Visible verified reviews, newest first. Reviewers appear as first name + initial. */
+hospitalsRouter.get("/:slug/reviews", async (req, res) => {
+  const h = await prisma.hospital.findUnique({ where: { slug: req.params.slug }, select: { id: true, verified: true, rating: true, reviewCount: true } });
+  if (!h || !h.verified) throw notFound("Hospital");
+  const [reviews, doctors] = await Promise.all([
+    prisma.review.findMany({
+      where: { hospitalId: h.id, hidden: false },
+      orderBy: { createdAt: "desc" },
+      take: 30,
+      select: { id: true, rating: true, comment: true, displayName: true, doctorId: true, createdAt: true },
+    }),
+    prisma.doctor.findMany({ where: { hospitalId: h.id }, select: { id: true, name: true } }),
+  ]);
+  const name = Object.fromEntries(doctors.map((d) => [d.id, d.name]));
+  res.json({
+    rating: h.rating,
+    count: h.reviewCount,
+    reviews: reviews.map(({ doctorId, ...r }) => ({ ...r, doctorName: name[doctorId] ?? null })),
+  });
+});
+
 /**
  * Public "Now serving" board for the waiting-room TV. Tokens only: no patient names.
  */
