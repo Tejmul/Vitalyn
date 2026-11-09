@@ -178,8 +178,9 @@ hospitalsRouter.get("/:slug", async (req, res) => {
 /** Slots for one doctor on one date, each marked available or not. */
 hospitalsRouter.get("/doctors/:doctorId/slots", async (req, res) => {
   const { date } = z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).default(todayIST()) }).parse(req.query);
-  const doctor = await prisma.doctor.findUnique({ where: { id: req.params.doctorId } });
-  if (!doctor || !doctor.active) throw notFound("Doctor");
+  const doctor = await prisma.doctor.findUnique({ where: { id: req.params.doctorId }, include: { hospital: { select: { verified: true } } } });
+  // A hidden (unverified) hospital is off the public site everywhere, slots included
+  if (!doctor || !doctor.active || !doctor.hospital.verified) throw notFound("Doctor");
   const [taken, leave] = await Promise.all([
     prisma.appointment.findMany({ where: { doctorId: doctor.id, date, status: { in: ACTIVE_STATUSES } }, select: { time: true } }),
     prisma.doctorLeave.findUnique({ where: { doctorId_date: { doctorId: doctor.id, date } } }),

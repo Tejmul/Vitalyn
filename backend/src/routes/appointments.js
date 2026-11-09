@@ -27,8 +27,12 @@ const slotSchema = {
   time: z.string().regex(/^\d{2}:\d{2}$/, "Pick a time"),
 };
 
-/** Throws unless `time` on `date` is a real, future, non-leave slot for this doctor. */
+/** The doctor row with what assertBookable needs to know about its hospital. */
+const doctorWithHospital = { hospital: { select: { verified: true } } };
+
+/** Throws unless `time` on `date` is a real, future, non-leave slot for this doctor at a listed hospital. */
 async function assertBookable(doctor, date, time) {
+  if (!doctor.hospital?.verified) throw new HttpError(400, "This hospital isn't taking online bookings right now");
   if (!doctor.active) throw new HttpError(400, `${doctor.name} is not taking bookings right now`);
   const leave = await prisma.doctorLeave.findUnique({ where: { doctorId_date: { doctorId: doctor.id, date } } });
   if (leave) throw new HttpError(400, "The doctor is on leave that day. Pick another day");
@@ -51,7 +55,7 @@ appointmentsRouter.post("/", async (req, res) => {
     .parse(req.body);
 
   const [doctor, profile] = await Promise.all([
-    prisma.doctor.findUnique({ where: { id: data.doctorId } }),
+    prisma.doctor.findUnique({ where: { id: data.doctorId }, include: doctorWithHospital }),
     prisma.patientProfile.findUnique({ where: { id: data.profileId } }),
   ]);
   if (!doctor) throw notFound("Doctor");
@@ -180,7 +184,7 @@ appointmentsRouter.post("/:id/cancel", async (req, res) => {
  */
 appointmentsRouter.post("/:id/reschedule", async (req, res) => {
   const { date, time } = z.object(slotSchema).parse(req.body);
-  const appt = await prisma.appointment.findUnique({ where: { id: String(req.params.id) }, include: { doctor: true } });
+  const appt = await prisma.appointment.findUnique({ where: { id: String(req.params.id) }, include: { doctor: { include: doctorWithHospital } } });
   if (!appt || appt.userId !== req.user.id) throw notFound("Appointment");
   if (!ACTIVE_STATUSES.includes(appt.status)) throw new HttpError(400, "Only upcoming bookings can be moved");
   if (slotStart(appt.date, appt.time).getTime() - Date.now() < 2 * 3600_000) {
