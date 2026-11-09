@@ -6,6 +6,7 @@ export function publicUser(u) {
     email: u.email,
     phone: u.phone,
     role: u.role,
+    staffRole: u.staffRole ?? null,
     hospitalId: u.hospitalId,
     consentAt: u.consentAt,
     createdAt: u.createdAt,
