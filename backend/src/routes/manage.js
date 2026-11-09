@@ -10,7 +10,9 @@ import { queueSms } from "../lib/notify.js";
 import { callNext, doctorQueue } from "../lib/queue.js";
 import { promoTotals } from "../lib/promoStats.js";
 import { tokenCode } from "../lib/transitions.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAuth, requireManager, requireRole } from "../middleware/auth.js";
+import { audit } from "../lib/audit.js";
+import { endAllSessions } from "../lib/session.js";
 
 
 /**
@@ -23,6 +25,9 @@ manageRouter.use(requireAuth, requireRole("HOSPITAL", "DOCTOR"));
 
 async function scope(user) {
   if (!user?.hospitalId) throw forbidden("Your account isn't linked to a hospital yet");
+  // Checked on every request so a removed staff member loses access at once, not when their token expires
+  const me = await prisma.user.findUnique({ where: { id: user.id }, select: { disabledAt: true } });
+  if (!me || me.disabledAt) throw new HttpError(401, "Your access has been removed. Ask your hospital manager");
   if (user.role === "DOCTOR") {
     const doctor = await prisma.doctor.findUnique({ where: { userId: user.id } });
     if (!doctor) throw forbidden("Your account isn't linked to a doctor profile yet");
@@ -234,7 +239,7 @@ const doctorProfile = {
 };
 
 /** Add a doctor. New doctors default to Mon–Sat, 9 AM–1 PM, 15-minute slots; the desk can change that. */
-manageRouter.post("/doctors", requireRole("HOSPITAL"), async (req, res) => {
+manageRouter.post("/doctors", requireManager, async (req, res) => {
   const s = await scope(req.user);
   const data = z.object(doctorProfile).parse(req.body);
   const doctor = await prisma.doctor.create({ data: { ...data, hospitalId: s.hospitalId } });
@@ -246,7 +251,7 @@ manageRouter.post("/doctors", requireRole("HOSPITAL"), async (req, res) => {
 });
 
 /** Weekly schedule, slot length, approval mode and profile details, set by the hospital with buttons. */
-manageRouter.patch("/doctors/:id", requireRole("HOSPITAL"), async (req, res) => {
+manageRouter.patch("/doctors/:id", requireManager, async (req, res) => {
   const s = await scope(req.user);
   const doc = await ownDoctor(s, String(req.params.id));
   const data = z
@@ -305,7 +310,7 @@ manageRouter.delete("/doctors/:id/leave/:date", async (req, res) => {
 });
 
 /** The hospital's own promotions with their numbers (read-only; the platform sells and edits them). */
-manageRouter.get("/promotions", requireRole("HOSPITAL"), async (req, res) => {
+manageRouter.get("/promotions", requireManager, async (req, res) => {
   const s = await scope(req.user);
   const promotions = await prisma.promotion.findMany({
     where: { hospitalId: s.hospitalId },
@@ -323,7 +328,7 @@ manageRouter.get("/hospital", async (req, res) => {
   res.json({ hospital });
 });
 
-manageRouter.patch("/hospital", requireRole("HOSPITAL"), async (req, res) => {
+manageRouter.patch("/hospital", requireManager, async (req, res) => {
   const s = await scope(req.user);
   const data = z
     .object({
@@ -360,7 +365,7 @@ const eventSchema = z
   })
   .refine((e) => e.endsAt > e.startsAt, { message: "End time must be after the start", path: ["endsAt"] });
 
-manageRouter.post("/events", requireRole("HOSPITAL"), async (req, res) => {
+manageRouter.post("/events", requireManager, async (req, res) => {
   const s = await scope(req.user);
   const data = eventSchema.parse(req.body);
   assertNoBannedClaims({ "the title": data.title, "the description": data.description });
@@ -368,7 +373,7 @@ manageRouter.post("/events", requireRole("HOSPITAL"), async (req, res) => {
   res.status(201).json({ event });
 });
 
-manageRouter.delete("/events/:id", requireRole("HOSPITAL"), async (req, res) => {
+manageRouter.delete("/events/:id", requireManager, async (req, res) => {
   const s = await scope(req.user);
   const ev = await prisma.event.findUnique({ where: { id: String(req.params.id) } });
   if (!ev || ev.hospitalId !== s.hospitalId) throw notFound("Event");
@@ -376,3 +381,71 @@ manageRouter.delete("/events/:id", requireRole("HOSPITAL"), async (req, res) => 
   res.status(204).end();
 });
 
+
+/* ---------------- Staff (managers only) ---------------- */
+
+manageRouter.get("/staff", requireManager, async (req, res) => {
+  const s = await scope(req.user);
+  const staff = await prisma.user.findMany({
+    where: { hospitalId: s.hospitalId, role: { in: ["HOSPITAL", "DOCTOR"] } },
+    orderBy: [{ disabledAt: { sort: "asc", nulls: "first" } }, { name: "asc" }],
+    select: { id: true, name: true, phone: true, role: true, staffRole: true, disabledAt: true, createdAt: true, doctor: { select: { id: true, name: true } } },
+  });
+  res.json({ staff });
+});
+
+/** Add a manager, a receptionist, or a doctor's own login (linked to an existing doctor). They log in by OTP. */
+manageRouter.post("/staff", requireManager, async (req, res) => {
+  const s = await scope(req.user);
+  const data = z
+    .object({
+      name: z.string().trim().min(2, "Enter their name").max(80),
+      phone: indianMobile,
+      kind: z.enum(["MANAGER", "RECEPTION", "DOCTOR"]),
+      doctorId: z.string().optional(),
+    })
+    .refine((d) => d.kind !== "DOCTOR" || d.doctorId, { message: "Pick which doctor this login is for", path: ["doctorId"] })
+    .parse(req.body);
+
+  if (await prisma.user.findUnique({ where: { phone: data.phone } })) {
+    throw new HttpError(409, "This mobile number already has a Vitalyn account. Use another number for work");
+  }
+  let doctor = null;
+  if (data.kind === "DOCTOR") {
+    doctor = await prisma.doctor.findUnique({ where: { id: data.doctorId } });
+    if (!doctor || doctor.hospitalId !== s.hospitalId) throw notFound("Doctor");
+    if (doctor.userId) throw new HttpError(409, `${doctor.name} already has a login`);
+  }
+  const user = await prisma.$transaction(async (tx) => {
+    const u = await tx.user.create({
+      data: {
+        name: data.name,
+        phone: data.phone,
+        role: data.kind === "DOCTOR" ? "DOCTOR" : "HOSPITAL",
+        staffRole: data.kind === "DOCTOR" ? null : data.kind,
+        hospitalId: s.hospitalId,
+      },
+    });
+    if (doctor) await tx.doctor.update({ where: { id: doctor.id }, data: { userId: u.id } });
+    return u;
+  });
+  await audit(prisma, req, "staff.create", { target: user.id, meta: { kind: data.kind } });
+  res.status(201).json({ staff: { id: user.id, name: user.name, phone: user.phone, role: user.role, staffRole: user.staffRole } });
+});
+
+/** Turn someone's access off (or back on). Turning off ends their sessions immediately. */
+manageRouter.patch("/staff/:id", requireManager, async (req, res) => {
+  const s = await scope(req.user);
+  const { disabled } = z.object({ disabled: z.boolean() }).parse(req.body);
+  const target = await prisma.user.findUnique({ where: { id: String(req.params.id) } });
+  if (!target || target.hospitalId !== s.hospitalId || !["HOSPITAL", "DOCTOR"].includes(target.role)) throw notFound("Staff member");
+  if (target.id === req.user.id) throw new HttpError(400, "You can't turn off your own access");
+  if (disabled && target.staffRole === "MANAGER") {
+    const managers = await prisma.user.count({ where: { hospitalId: s.hospitalId, staffRole: "MANAGER", disabledAt: null } });
+    if (managers <= 1) throw new HttpError(400, "A hospital needs at least one active manager");
+  }
+  await prisma.user.update({ where: { id: target.id }, data: { disabledAt: disabled ? new Date() : null } });
+  if (disabled) await endAllSessions(target.id);
+  await audit(prisma, req, disabled ? "staff.disable" : "staff.enable", { target: target.id });
+  res.status(204).end();
+});
