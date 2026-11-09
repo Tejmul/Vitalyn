@@ -1,7 +1,7 @@
 import prismaPkg from "@prisma/client";
 import { HttpError, forbidden } from "./http.js";
 import { notify } from "./notify.js";
-import { slotStart } from "./slots.js";
+import { slotStart, todayIST } from "./slots.js";
 
 const { Prisma } = prismaPkg;
 
@@ -117,6 +117,10 @@ export async function transition(tx, appointmentId, action, { actorId = null, ro
   if (!rule.from.includes(appt.status)) {
     const now = appt.status === "DOCTOR_APPROVED" ? "waiting" : appt.status.toLowerCase().replace("_", " ");
     throw new HttpError(409, `This booking is ${now} and can't be ${rule.past} now`);
+  }
+
+  if ((action === "arrive" || action === "no_show") && appt.date > todayIST()) {
+    throw new HttpError(409, "You can mark arrival or no-show only on the day of the visit");
   }
 
   const data = { status: rule.to, ...(note ? { note } : {}) };
