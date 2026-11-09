@@ -6,7 +6,23 @@ function required(name) {
   return v;
 }
 
-const isProd = process.env.NODE_ENV === "production";
+/**
+ * Development shortcuts (OTP shown on screen, SMS printed to the console, cookies over plain
+ * http, request logging) need an explicit NODE_ENV=development or test. Anything else,
+ * including a forgotten NODE_ENV, runs with production safety.
+ */
+const nodeEnv = (process.env.NODE_ENV ?? "").trim();
+const isDev = nodeEnv === "development" || nodeEnv === "test";
+const isProd = !isDev;
+
+/** Outside development the signing secret must be long and not the .env.example placeholder. */
+function jwtSecret() {
+  const s = required("JWT_SECRET");
+  if (!isDev && (s.length < 32 || s.startsWith("change-me"))) {
+    throw new Error("JWT_SECRET must be a long random string (32+ characters) outside development");
+  }
+  return s;
+}
 
 /**
  * Which proxies to trust for the client IP (rate limits and audit log use it).
@@ -24,9 +40,10 @@ function trustProxy(raw) {
 
 export const config = {
   port: Number(process.env.PORT ?? 4000),
+  isDev,
   isProd,
   trustProxy: trustProxy(process.env.TRUST_PROXY || "1"),
-  jwtSecret: required("JWT_SECRET"),
+  jwtSecret: jwtSecret(),
   // Short-lived access token; the httpOnly refresh cookie renews it.
   accessTtl: process.env.ACCESS_TOKEN_TTL ?? "15m",
   refreshDays: Number(process.env.REFRESH_TOKEN_DAYS ?? 30),
