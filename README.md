@@ -114,6 +114,7 @@ stateDiagram-v2
 - **Deadlines.** A manual-approval request must be accepted by the earlier of 2 hours after booking or 2 hours before the slot (never less than 15 minutes). A background job expires late requests and tells the patient.
 - **Reschedule safely.** Moving a booking is a single update, so the old slot is released only if the new one is free.
 - **Walk-ins** take the next token in the same queue as online bookings.
+- **Live queue.** The desk presses **Call next** (under the same per-doctor lock), the waiting-room TV at `/queue/<hospital>` shows "Now serving" (tokens only), patients see how many are ahead with a rough wait (people ahead × slot length), and anyone 2 or fewer away gets one "your turn is near" alert.
 
 ## Getting started
 
@@ -195,6 +196,7 @@ Base URL `/api`. Authenticated routes need `Authorization: Bearer <token>`. Erro
 | GET | `/hospitals/specialties` | filter chips |
 | GET | `/hospitals/:slug` | hospital, doctors (with hours and leave days), upcoming events |
 | GET | `/hospitals/doctors/:id/slots?date=YYYY-MM-DD` | each slot with `available` |
+| GET | `/hospitals/:slug/queue` | public "Now serving" board (tokens only, no names) for the waiting-room TV at `/queue/:slug` |
 | GET | `/events` | upcoming events across hospitals |
 
 </details>
@@ -212,6 +214,7 @@ Base URL `/api`. Authenticated routes need `Authorization: Bearer <token>`. Erro
 | GET | `/appointments/me` | all bookings |
 | POST | `/appointments/:id/cancel` | any time before the visit |
 | POST | `/appointments/:id/reschedule` | `date`, `time`; up to 2 hours before |
+| GET | `/appointments/:id/queue` | on the day: now serving, people ahead, rough wait |
 
 </details>
 
@@ -225,6 +228,8 @@ Base URL `/api`. Authenticated routes need `Authorization: Bearer <token>`. Erro
 | POST | `/manage/appointments/:id/action` | hospital, doctor | `accept` (issues the token) · `reject` · `arrive` · `no_show` |
 | POST | `/manage/appointments/:id/paid` | hospital | fee collected |
 | POST | `/manage/walk-ins` | hospital | `doctorId`, `name`, `phone?`, `age?` → next token |
+| GET | `/manage/queue` | hospital, doctor | today's queue per doctor: now serving, next, waiting |
+| POST | `/manage/doctors/:id/call-next` | hospital, doctor | call the next token; alerts people 2 or fewer away |
 | GET | `/manage/doctors` | hospital, doctor | with upcoming leave |
 | POST | `/manage/doctors` | hospital | add a doctor (name, speciality, qualification, fee, languages, registration no.) |
 | PATCH | `/manage/doctors/:id` | hospital | OPD days, hours, slot length, auto-confirm, details, stop/resume bookings |
@@ -329,7 +334,7 @@ The expiry job runs inside the API process. With more than one API instance, mov
 - [x] Phone OTP login (MSG91 Flow API; dev mode shows the code on screen)
 - [ ] WhatsApp and SMS updates from the notification outbox
 - [ ] UPI prepayment with automatic refunds (Razorpay)
-- [ ] Live "Now serving" queue screen for hospital TVs
+- [x] Live token queue: Call next at the desk, "Now serving" TV screen, patient position and "your turn is near" alerts
 - [ ] Hindi and regional languages
 - [ ] Verified reviews after a visit
 - [ ] ABDM: ABHA linking and Scan & Share
@@ -358,5 +363,6 @@ Each message type needs its own DLT-approved template. Every template can use `#
 | Not accepted | `MSG91_FLOW_REJECTED` | desk or doctor rejects | `##name##, ##doctor## could not take your ##when## booking. Please book another time.` |
 | Request expired | `MSG91_FLOW_EXPIRED` | nobody accepted by the deadline | `##hospital## did not reply in time for ##when##. Your slot was released.` |
 | Doctor on leave | `MSG91_FLOW_DOCTOR_LEAVE` | the desk marks the doctor on leave | `##doctor## is unavailable on ##when##. Your booking is cancelled. Please book another day.` |
+| Your turn is near | `MSG91_FLOW_TOKEN_NEAR` | when 2 or fewer people are ahead in today's queue (also gets `##serving##`) | `Now serving ##serving## with ##doctor##. Your token ##token## is coming up. Please be near the OPD.` |
 
 A message type with no template ID set is recorded as **skipped** (with the reason) instead of failing silently. In development without keys, messages are printed in the API log.
