@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowLeft, BadgeCheck, BedDouble, CheckCircle2, Clock, Languages, MapPin, MessageCircle, Navigation, Phone, Siren, Star } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, seg } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { usePlace } from "@/lib/location";
 import { useApi } from "@/lib/useApi";
@@ -26,7 +26,7 @@ type Full = Hospital & { doctors: Doctor[]; events: HospitalEvent[] };
 export default function HospitalPage() {
   const { slug } = useParams<{ slug: string }>();
   const { place } = usePlace();
-  const req = useApi<{ hospital: Full }>(`/hospitals/${slug}`, { lat: place.lat, lng: place.lng });
+  const req = useApi<{ hospital: Full }>(`/hospitals/${seg(slug)}`, { lat: place.lat, lng: place.lng });
   const h = req.data?.hospital ?? null;
   // "Book again" links pass ?doctor=<id> to open with that doctor selected
   const search = useSearchParams();

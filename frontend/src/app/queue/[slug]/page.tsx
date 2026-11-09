@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, seg } from "@/lib/api";
 import { Logo } from "@/components/ui/Logo";
 
 type Board = { doctorName: string; specialty: string; serving: string | null; next: string[]; waiting: number };
@@ -20,7 +20,7 @@ export default function QueueScreen() {
   useEffect(() => {
     let alive = true;
     const load = () =>
-      api<{ hospital: { name: string }; boards: Board[]; updatedAt: string }>(`/hospitals/${slug}/queue`)
+      api<{ hospital: { name: string }; boards: Board[]; updatedAt: string }>(`/hospitals/${seg(slug)}/queue`)
         .then((d) => {
           if (!alive) return;
           setData(d);
