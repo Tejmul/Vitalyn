@@ -2,8 +2,23 @@
  * Demo data. All hospitals and doctors are fictional.
  * Run: npm run db:seed   (or npm run db:reset to wipe + migrate + seed)
  */
+import "dotenv/config";
 import prismaPkg from "@prisma/client";
 const { PrismaClient } = prismaPkg;
+
+/**
+ * The seed wipes every table and creates demo logins (including an admin on a published
+ * number). Only run it against a local database unless someone explicitly opts in.
+ */
+function assertSafeToSeed() {
+  if (process.env.NODE_ENV === "production") throw new Error("Refusing to seed with NODE_ENV=production: the seed wipes all data.");
+  const host = new URL(process.env.DATABASE_URL ?? "postgresql://localhost").hostname;
+  const local = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(host);
+  if (!local && process.env.SEED_ALLOW_REMOTE !== "yes") {
+    throw new Error(`Refusing to seed ${host}: the seed wipes all data. Set SEED_ALLOW_REMOTE=yes if this really is a throwaway database.`);
+  }
+}
+assertSafeToSeed();
 
 const prisma = new PrismaClient();
 
