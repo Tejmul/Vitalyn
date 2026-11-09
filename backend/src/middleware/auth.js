@@ -2,10 +2,41 @@ import jwt from "jsonwebtoken";
 import { config } from "../config.js";
 import { HttpError } from "../lib/http.js";
 
+/**
+ * Every token we sign says what it is for (`typ`) and is checked for that purpose.
+ * Without this, a short-lived sign-up token (which proves a phone, not an account)
+ * would pass as a login and reach routes that only need "someone signed in".
+ */
+const ALG = "HS256";
+const ACCESS = "access";
+const SIGNUP = "signup";
+
 export function signToken(user) {
-  return jwt.sign({ sub: user.id, role: user.role, hospitalId: user.hospitalId, staffRole: user.staffRole ?? null }, config.jwtSecret, {
-    expiresIn: config.accessTtl,
-  });
+  return jwt.sign(
+    { typ: ACCESS, sub: user.id, role: user.role, hospitalId: user.hospitalId, staffRole: user.staffRole ?? null },
+    config.jwtSecret,
+    { algorithm: ALG, expiresIn: config.accessTtl, audience: ACCESS },
+  );
+}
+
+/** Proof that `phone` passed an OTP check but has no account yet. Only /complete-profile accepts it. */
+export function signSignupToken(phone) {
+  return jwt.sign({ typ: SIGNUP, phone }, config.jwtSecret, { algorithm: ALG, expiresIn: "15m", audience: SIGNUP });
+}
+
+/** Returns the verified phone, or throws. */
+export function verifySignupToken(token) {
+  const payload = jwt.verify(token, config.jwtSecret, { algorithms: [ALG], audience: SIGNUP });
+  if (payload.typ !== SIGNUP || typeof payload.phone !== "string") throw new Error("not a sign-up token");
+  return payload.phone;
+}
+
+function verifyAccessToken(token) {
+  const payload = jwt.verify(token, config.jwtSecret, { algorithms: [ALG], audience: ACCESS });
+  if (payload.typ !== ACCESS || typeof payload.sub !== "string" || !payload.sub || typeof payload.role !== "string") {
+    throw new Error("not an access token");
+  }
+  return payload;
 }
 
 /** Requires a valid `Authorization: Bearer <token>` header. */
@@ -14,7 +45,7 @@ export function requireAuth(req, _res, next) {
   const token = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
   if (!token) return next(new HttpError(401, "Please log in to continue"));
   try {
-    const payload = jwt.verify(token, config.jwtSecret);
+    const payload = verifyAccessToken(token);
     req.user = { id: payload.sub, role: payload.role, hospitalId: payload.hospitalId ?? null, staffRole: payload.staffRole ?? null };
     next();
   } catch {

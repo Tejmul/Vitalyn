@@ -1,15 +1,13 @@
 import { Router } from "express";
-import jwt from "jsonwebtoken";
 import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
-import { config } from "../config.js";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../lib/http.js";
 import { requestOtp, verifyOtp } from "../lib/otp.js";
 import { indianMobile } from "../lib/schemas.js";
 import { publicUser } from "../lib/serialize.js";
 import { endSession, rotateSession, startSession } from "../lib/session.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, signSignupToken, verifySignupToken } from "../middleware/auth.js";
 
 /**
  * Phone OTP is the only way in, for every role:
@@ -52,7 +50,7 @@ authRouter.post("/otp/verify", otpLimiter, async (req, res) => {
     return res.json({ accessToken, user: publicUser(user) });
   }
   // New number: prove it was verified for the next step, without creating an account yet.
-  const signupToken = jwt.sign({ phone, typ: "signup" }, config.jwtSecret, { expiresIn: "15m" });
+  const signupToken = signSignupToken(phone);
   res.json({ needsProfile: true, signupToken });
 });
 
@@ -71,9 +69,7 @@ authRouter.post("/complete-profile", async (req, res) => {
 
   let phone;
   try {
-    const payload = jwt.verify(data.signupToken, config.jwtSecret);
-    if (payload.typ !== "signup") throw new Error("wrong token");
-    phone = payload.phone;
+    phone = verifySignupToken(data.signupToken);
   } catch {
     throw new HttpError(401, "This sign-up link has expired. Please verify your number again");
   }
