@@ -13,6 +13,7 @@ import { Applications } from "./Applications";
 import { Messages } from "./Messages";
 import { Incidents } from "./Incidents";
 import { AuditLog } from "./AuditLog";
+import { ReviewsAdmin } from "./ReviewsAdmin";
 
 type Overview = { counts: { users: number; hospitals: number; doctors: number; appointments: number; pending: number; activePromotions: number; applications: number } };
 type AdminHospital = {
@@ -42,7 +43,7 @@ function promoState(p: Promotion) {
 
 export function AdminDashboard() {
   const [ov, setOv] = useState<Overview | null>(null);
-  const [tab, setTab] = useState<"applications" | "promotions" | "hospitals" | "messages" | "users" | "audit" | "incidents">("promotions");
+  const [tab, setTab] = useState<"applications" | "promotions" | "hospitals" | "reviews" | "messages" | "users" | "audit" | "incidents">("promotions");
 
   const loadOv = useCallback(() => {
     api<Overview>("/admin/overview").then(setOv).catch(() => {});
@@ -70,6 +71,7 @@ export function AdminDashboard() {
           { value: "applications", label: "Applications", count: ov?.counts.applications },
           { value: "promotions", label: "Promotions" },
           { value: "hospitals", label: "Hospitals" },
+          { value: "reviews", label: "Reviews" },
           { value: "messages", label: "Text messages" },
           { value: "incidents", label: "Incidents" },
           { value: "audit", label: "Audit log" },
@@ -79,6 +81,7 @@ export function AdminDashboard() {
       {tab === "applications" && <Applications onChange={loadOv} />}
       {tab === "promotions" && <Promotions onChange={loadOv} />}
       {tab === "hospitals" && <Hospitals />}
+      {tab === "reviews" && <ReviewsAdmin />}
       {tab === "messages" && <Messages />}
       {tab === "incidents" && <Incidents />}
       {tab === "audit" && <AuditLog />}

@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { HttpError, notFound } from "../lib/http.js";
 import { toneFor, uniqueSlug } from "../lib/slug.js";
 import { audit, maskPhone } from "../lib/audit.js";
+import { recomputeRating } from "../lib/reviews.js";
 import { assertNoBannedClaims } from "../lib/claims.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -329,4 +330,32 @@ adminRouter.patch("/incidents/:id", async (req, res) => {
   const incident = await prisma.incident.update({ where: { id: i.id }, data });
   await audit(prisma, req, "incident.update", { target: i.id, meta: data });
   res.json({ incident });
+});
+
+/* ---------------- Reviews (moderation) ---------------- */
+
+adminRouter.get("/reviews", async (_req, res) => {
+  const reviews = await prisma.review.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 100,
+    include: { hospital: { select: { name: true, city: true } } },
+  });
+  res.json({ reviews });
+});
+
+/** Hide (with a reason) or restore a review. The hospital's rating is recalculated. */
+adminRouter.patch("/reviews/:id", async (req, res) => {
+  const data = z
+    .object({ hidden: z.boolean(), reason: z.string().trim().min(3, "Give a reason").max(200).optional() })
+    .refine((d) => !d.hidden || d.reason, { message: "Give a reason for hiding", path: ["reason"] })
+    .parse(req.body);
+  const r = await prisma.review.findUnique({ where: { id: String(req.params.id) } });
+  if (!r) throw notFound("Review");
+  const review = await prisma.$transaction(async (tx) => {
+    const u = await tx.review.update({ where: { id: r.id }, data: { hidden: data.hidden, hiddenReason: data.hidden ? data.reason : null } });
+    await recomputeRating(tx, r.hospitalId);
+    return u;
+  });
+  await audit(prisma, req, data.hidden ? "review.hide" : "review.restore", { target: r.id, meta: { reason: data.reason } });
+  res.json({ review });
 });

@@ -107,7 +107,8 @@ model Hospital {
   lat         Float
   lng         Float
   specialties String[]
-  rating      Float    @default(4.5)
+  // Average of visible verified reviews (0 when there are none); recalculated on every change
+  rating      Float    @default(0)
   reviewCount Int      @default(0)
   beds        Int      @default(100)
   emergency24x7 Boolean @default(true)
@@ -128,6 +129,7 @@ model Hospital {
   appointments Appointment[]
   staff        User[]
   savedBy      SavedHospital[]
+  reviews      Review[]
 }
 
 model Doctor {
@@ -234,6 +236,7 @@ model Appointment {
   profileId  String?
   profile    PatientProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
   events     AppointmentEvent[]
+  review     Review?
   doctorId   String
   doctor     Doctor   @relation(fields: [doctorId], references: [id])
   hospitalId String
@@ -334,6 +337,27 @@ model Promotion {
 
   hospitalId String
   hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+}
+
+/// A review from a patient whose visit was marked Arrived. One per visit.
+model Review {
+  id         String   @id @default(cuid())
+  rating     Int // 1–5
+  comment    String?
+  // Shown publicly as first name + initial, e.g. "Riya P."
+  displayName String
+  hidden     Boolean  @default(false)
+  hiddenReason String?
+  createdAt  DateTime @default(now())
+
+  appointmentId String      @unique
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  hospitalId    String
+  hospital      Hospital    @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+  doctorId      String
+  userId        String?
+
+  @@index([hospitalId, hidden, createdAt])
 }
 
 /// Who did what in the admin console, including every view of patient data.

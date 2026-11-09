@@ -16,11 +16,14 @@ import { ErrorNote, Field, inputClass } from "@/components/ui/Field";
 import { HospitalCard } from "@/components/app/HospitalCard";
 import { SlotPicker } from "@/components/app/SlotPicker";
 import { FamilyPanel } from "@/components/app/Family";
+import { ReviewForm, Stars } from "@/components/app/Reviews";
 import { EventCard } from "@/components/landing/Events";
 import { Empty, Panel, StatusBadge } from "./bits";
 
 const ACTIVE = new Set(["PENDING", "DOCTOR_APPROVED", "CONFIRMED"]);
 const canMove = (a: Appointment) => ACTIVE.has(a.status) && new Date(`${a.date}T${a.time}:00+05:30`).getTime() - Date.now() > 2 * 3600_000;
+/** Reviews: arrived visits, not yet reviewed, within 30 days. */
+const canReview = (a: Appointment) => a.status === "COMPLETED" && !a.review && Date.now() - new Date(`${a.date}T${a.time}:00+05:30`).getTime() < 30 * 86_400_000;
 const forWhom = (a: Appointment) => (a.profile && a.profile.relation !== "Self" ? `${a.patientName} (${a.profile.relation})` : a.patientName);
 
 function Progress({ a }: { a: Appointment }) {
@@ -69,7 +72,13 @@ function MoveSheet({ a, onClose, onMoved }: { a: Appointment; onClose: () => voi
   };
 
   return (
-    <motion.div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-0 sm:items-center sm:p-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+    <motion.div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-0 sm:items-center sm:p-6"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
       <motion.div
         role="dialog"
         aria-modal="true"
@@ -182,7 +191,10 @@ function NextVisit({ a, onCancel, onMove, busy }: { a: Appointment; onCancel: ()
           <p className="mt-3 text-[13.5px] text-muted">{STATUS[a.status].help}.</p>
           <div className="mt-5 flex flex-wrap gap-2">
             {a.hospital && (
-              <a href={`tel:${a.hospital.phone.replace(/\s/g, "")}`} className="inline-flex h-10 items-center gap-2 rounded-full bg-mist px-4 text-[14px] font-semibold text-ink hover:bg-sky">
+              <a
+                href={`tel:${a.hospital.phone.replace(/\s/g, "")}`}
+                className="inline-flex h-10 items-center gap-2 rounded-full bg-mist px-4 text-[14px] font-semibold text-ink hover:bg-sky"
+              >
                 <Phone className="size-4" /> Call hospital
               </a>
             )}
@@ -196,7 +208,9 @@ function NextVisit({ a, onCancel, onMove, busy }: { a: Appointment; onCancel: ()
             </Button>
           </div>
         </div>
-        <div className={`flex flex-col items-center justify-center border-t border-dashed border-line p-6 md:border-l md:border-t-0 ${confirmed ? "bg-blue text-white" : "bg-mist"}`}>
+        <div
+          className={`flex flex-col items-center justify-center border-t border-dashed border-line p-6 md:border-l md:border-t-0 ${confirmed ? "bg-blue text-white" : "bg-mist"}`}
+        >
           <p className={`font-mono text-[11px] uppercase tracking-[0.18em] ${confirmed ? "text-white/70" : "text-muted"}`}>Token</p>
           <p className={`mt-1 font-mono text-[56px] font-bold leading-none ${confirmed ? "" : "text-muted/40"}`}>{confirmed ? tokenCode(a.tokenNumber, a.doctor.name) : "··"}</p>
           <p className={`mt-3 max-w-[200px] text-center text-[12.5px] ${confirmed ? "text-white/80" : "text-muted"}`}>
@@ -260,7 +274,9 @@ function Updates() {
               <div>
                 <p className="text-[14.5px] font-semibold">{n.title}</p>
                 <p className="text-[13px] text-muted">{n.body}</p>
-                <p className="mt-0.5 text-[11.5px] text-muted/80">{new Date(n.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</p>
+                <p className="mt-0.5 text-[11.5px] text-muted/80">
+                  {new Date(n.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
+                </p>
               </div>
             </li>
           ))}
@@ -334,9 +350,19 @@ function Account() {
             <p className="text-[14px] text-ink-2">We&apos;ll text a code to your mobile to confirm it&apos;s you.</p>
           ) : (
             <>
-              {codeSent.devCode && <p className="text-[13px] text-amber">Development mode, no SMS sent. Code: <b className="font-mono">{codeSent.devCode}</b></p>}
+              {codeSent.devCode && (
+                <p className="text-[13px] text-amber">
+                  Development mode, no SMS sent. Code: <b className="font-mono">{codeSent.devCode}</b>
+                </p>
+              )}
               <Field label="Code from the text message">
-                <input className={`${inputClass} font-mono tracking-[0.3em]`} inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} />
+                <input
+                  className={`${inputClass} font-mono tracking-[0.3em]`}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                />
               </Field>
             </>
           )}
@@ -368,6 +394,7 @@ export function PatientDashboard({ name }: { name: string }) {
   const [events, setEvents] = useState<HospitalEvent[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [moving, setMoving] = useState<Appointment | null>(null);
+  const [reviewing, setReviewing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -480,24 +507,46 @@ export function PatientDashboard({ name }: { name: string }) {
           ) : (
             <ul className="divide-y divide-line">
               {past.map((a) => (
-                <li key={a.id} className="flex items-center justify-between gap-3 py-3.5">
-                  <div>
-                    <p className="text-[15px] font-semibold">
-                      {new Date(`${a.date}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} · {a.doctor.name}
-                    </p>
-                    <p className="text-[13px] text-muted">
-                      For {forWhom(a)} · {a.hospital?.name}
-                      {a.note ? ` · ${a.note}` : ""}
-                    </p>
+                <li key={a.id} className="py-3.5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[15px] font-semibold">
+                        {new Date(`${a.date}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} · {a.doctor.name}
+                      </p>
+                      <p className="text-[13px] text-muted">
+                        For {forWhom(a)} · {a.hospital?.name}
+                        {a.note ? ` · ${a.note}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={a.status} />
+                      {canReview(a) && (
+                        <Button size="sm" variant={reviewing === a.id ? "ghost" : "primary"} onClick={() => setReviewing(reviewing === a.id ? null : a.id)}>
+                          {reviewing === a.id ? "Close" : "Rate visit"}
+                        </Button>
+                      )}
+                      {a.hospital && (
+                        <ButtonLink href={`/hospitals/${a.hospital.slug}?doctor=${a.doctor.id}`} size="sm" variant="secondary">
+                          Book again
+                        </ButtonLink>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <StatusBadge status={a.status} />
-                    {a.hospital && (
-                      <ButtonLink href={`/hospitals/${a.hospital.slug}?doctor=${a.doctor.id}`} size="sm" variant="secondary">
-                        Book again
-                      </ButtonLink>
-                    )}
-                  </div>
+                  {a.review && (
+                    <p className="mt-2 flex items-center gap-2 text-[13px] text-muted">
+                      You rated <Stars value={a.review.rating} size={13} />
+                      {a.review.hidden && <span>(hidden by Vitalyn)</span>}
+                    </p>
+                  )}
+                  {reviewing === a.id && (
+                    <ReviewForm
+                      appointmentId={a.id}
+                      onDone={() => {
+                        setReviewing(null);
+                        load();
+                      }}
+                    />
+                  )}
                 </li>
               ))}
             </ul>

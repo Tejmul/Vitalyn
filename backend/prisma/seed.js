@@ -32,8 +32,6 @@ const hospitals = [
     lat: 23.0504,
     lng: 72.517,
     specialties: ["Cardiology", "Orthopaedics", "General Medicine", "Emergency"],
-    rating: 4.7,
-    reviewCount: 2140,
     beds: 220,
     tone: "#1747E5",
     imageUrl: "/images/doctor-team.jpg",
@@ -106,8 +104,6 @@ const hospitals = [
     lat: 23.012,
     lng: 72.5108,
     specialties: ["Gynaecology", "Paediatrics", "Neonatology"],
-    rating: 4.8,
-    reviewCount: 1675,
     beds: 120,
     tone: "#0E7C86",
     doctors: [
@@ -167,8 +163,6 @@ const hospitals = [
     lat: 23.0225,
     lng: 72.5714,
     specialties: ["Neurology", "Nephrology", "Urology", "Emergency"],
-    rating: 4.5,
-    reviewCount: 980,
     beds: 300,
     tone: "#5B3FD6",
     doctors: [
@@ -216,8 +210,6 @@ const hospitals = [
     lat: 19.0544,
     lng: 72.8402,
     specialties: ["Oncology", "General Surgery", "Cardiology"],
-    rating: 4.6,
-    reviewCount: 3120,
     beds: 410,
     tone: "#0B5CAD",
     imageUrl: "/images/bharosa.jpg",
@@ -266,8 +258,6 @@ const hospitals = [
     lat: 18.5074,
     lng: 73.8077,
     specialties: ["Endocrinology", "General Medicine", "Dermatology"],
-    rating: 4.4,
-    reviewCount: 640,
     beds: 80,
     tone: "#2563EB",
     doctors: [
@@ -315,8 +305,6 @@ const hospitals = [
     lat: 12.9649,
     lng: 77.6007,
     specialties: ["Cardiology", "Cardiac Surgery"],
-    rating: 4.8,
-    reviewCount: 2890,
     beds: 180,
     tone: "#1E40AF",
     imageUrl: "/images/trust.jpg",
@@ -366,8 +354,6 @@ const hospitals = [
     lat: 28.5677,
     lng: 77.2433,
     specialties: ["Orthopaedics", "Physiotherapy", "Emergency", "General Medicine"],
-    rating: 4.5,
-    reviewCount: 1530,
     beds: 260,
     tone: "#3B5BDB",
     imageUrl: "/images/care-family.jpg",
@@ -417,8 +403,6 @@ const hospitals = [
     lat: 17.4126,
     lng: 78.4392,
     specialties: ["Ophthalmology", "ENT"],
-    rating: 4.6,
-    reviewCount: 1210,
     beds: 50,
     tone: "#0369A1",
     doctors: [
@@ -464,6 +448,7 @@ async function main() {
   await prisma.consentRecord.deleteMany();
   await prisma.outboundMessage.deleteMany();
   await prisma.hospitalApplication.deleteMany();
+  await prisma.review.deleteMany();
   await prisma.appointment.deleteMany();
   await prisma.promotion.deleteMany();
   await prisma.event.deleteMany();
@@ -650,6 +635,23 @@ async function main() {
       });
     }
   }
+  // One verified review: Riya's completed visit (ratings only ever come from reviews like this)
+  const visited = await prisma.appointment.findFirst({ where: { userId: patient.id, status: "COMPLETED" } });
+  if (visited) {
+    await prisma.review.create({
+      data: {
+        rating: 5,
+        comment: "Short wait and Dr. Shah explained the BP readings clearly.",
+        displayName: "Riya P.",
+        appointmentId: visited.id,
+        hospitalId: visited.hospitalId,
+        doctorId: visited.doctorId,
+        userId: patient.id,
+      },
+    });
+    await prisma.hospital.update({ where: { id: visited.hospitalId }, data: { rating: 5, reviewCount: 1 } });
+  }
+
   console.log(`Seeded ${hospitals.length} hospitals, ${bookings.length} bookings, 4 demo accounts.`);
 }
 

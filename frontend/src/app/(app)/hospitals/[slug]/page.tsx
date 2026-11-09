@@ -18,6 +18,7 @@ import { EventCard } from "@/components/landing/Events";
 import { SlotPicker } from "@/components/app/SlotPicker";
 import { ProfilePicker, defaultProfileId, useProfiles } from "@/components/app/Family";
 import { SaveButton } from "@/components/app/SaveButton";
+import { HospitalReviews } from "@/components/app/Reviews";
 
 type Full = Hospital & { doctors: Doctor[]; events: HospitalEvent[] };
 
@@ -93,7 +94,7 @@ export default function HospitalPage() {
                 <Star className="size-4 fill-amber text-amber" />
                 {h.reviewCount > 0 ? (
                   <span>
-                    <b>{h.rating.toFixed(1)}</b> ({h.reviewCount.toLocaleString("en-IN")} reviews)
+                    <b>{h.rating.toFixed(1)}</b> ({h.reviewCount.toLocaleString("en-IN")} verified review{h.reviewCount === 1 ? "" : "s"})
                   </span>
                 ) : (
                   <span>New on Vitalyn</span>
@@ -239,6 +240,8 @@ export default function HospitalPage() {
               </div>
             </div>
           )}
+
+          <HospitalReviews slug={h.slug} />
         </section>
 
         <aside className="lg:sticky lg:top-24 lg:self-start">

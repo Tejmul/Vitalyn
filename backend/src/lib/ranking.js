@@ -39,7 +39,8 @@ export async function nextFreeSlots(hospitalIds, days = 7) {
 /** Organic score, 0..1: distance 50%, rating 25%, soonest free slot 25%. */
 export function organicScore(h, radiusKm) {
   const distance = h.distanceKm === null ? 0.5 : 1 - Math.min(h.distanceKm, radiusKm) / radiusKm;
-  const rating = Math.min(1, Math.max(0, (h.rating - 3) / 2));
+  // No verified reviews yet → neutral, so new hospitals aren't buried
+  const rating = h.reviewCount > 0 ? Math.min(1, Math.max(0, (h.rating - 3) / 2)) : 0.5;
   const hoursAway = h.nextSlotAt ? (new Date(h.nextSlotAt).getTime() - Date.now()) / 3600_000 : 168;
   const soon = 1 - Math.min(Math.max(hoursAway, 0), 168) / 168;
   return 0.5 * distance + 0.25 * rating + 0.25 * soon;
