@@ -6,7 +6,7 @@ import { ACTIVE_STATUSES, isPast, slotStart, slotsForDay, todayIST } from "../li
 import { doctorQueue } from "../lib/queue.js";
 import { REVIEW_WINDOW_DAYS, recomputeRating, reviewerName } from "../lib/reviews.js";
 import { bumpPromo } from "../lib/promoStats.js";
-import { MESSAGES, approveDeadline, isSlotClash, logEvent, nextToken, smsVars, tokenCode, transition, withTokenRetry } from "../lib/transitions.js";
+import { MESSAGES, approveDeadline, isSlotClash, lockAppointment, logEvent, nextToken, smsVars, tokenCode, transition, withTokenRetry } from "../lib/transitions.js";
 import { notify } from "../lib/notify.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -196,6 +196,13 @@ appointmentsRouter.post("/:id/reschedule", async (req, res) => {
   try {
     const updated = await withTokenRetry(() =>
       prisma.$transaction(async (tx) => {
+        // Re-check under the row lock: a desk reject, cancel or expiry that landed since the
+        // checks above must not be overwritten by this move.
+        await lockAppointment(tx, appt.id);
+        const current = await tx.appointment.findUnique({ where: { id: appt.id }, select: { status: true, date: true, time: true } });
+        if (!current || !ACTIVE_STATUSES.includes(current.status) || current.date !== appt.date || current.time !== appt.time) {
+          throw new HttpError(409, "This booking just changed. Please refresh and try again");
+        }
         const confirmed = appt.doctor.autoConfirm;
         const u = await tx.appointment.update({
           where: { id: appt.id },
