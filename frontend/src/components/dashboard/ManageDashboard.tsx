@@ -13,6 +13,7 @@ import { Empty, Panel, Segmented, Stat, StatusBadge } from "./bits";
 import { DoctorForm } from "./DoctorForm";
 import { HospitalProfile } from "./HospitalProfile";
 import { QueueBar } from "./QueueBar";
+import { YourPromotions } from "./YourPromotions";
 
 type Overview = {
   hospital: { id: string; name: string; slug: string; city: string } | null;
@@ -227,6 +228,7 @@ export function ManageDashboard({ role }: { role: Extract<Role, "HOSPITAL" | "DO
         <EventsPanel role={role} onChange={load} />
       </div>
 
+      {role === "HOSPITAL" && <YourPromotions />}
       {role === "HOSPITAL" && <HospitalProfile />}
     </div>
   );
