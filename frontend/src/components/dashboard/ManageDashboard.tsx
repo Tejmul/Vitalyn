@@ -12,6 +12,7 @@ import { ErrorNote, Field, inputClass } from "@/components/ui/Field";
 import { Empty, Panel, Segmented, Stat, StatusBadge } from "./bits";
 import { DoctorForm } from "./DoctorForm";
 import { HospitalProfile } from "./HospitalProfile";
+import { QueueBar } from "./QueueBar";
 
 type Overview = {
   hospital: { id: string; name: string; slug: string; city: string } | null;
@@ -32,6 +33,7 @@ export function ManageDashboard({ role }: { role: Extract<Role, "HOSPITAL" | "DO
   const [busy, setBusy] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [walkIn, setWalkIn] = useState(false);
+  const [tick, setTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -41,11 +43,17 @@ export function ManageDashboard({ role }: { role: Extract<Role, "HOSPITAL" | "DO
   }, []);
   useEffect(load, [load]);
 
+  /** Reload everything, including the live queue bar (used after actions and on the timer). */
+  const refresh = useCallback(() => {
+    setTick((t) => t + 1);
+    load();
+  }, [load]);
+
   // The desk inbox refreshes itself every 15 seconds.
   useEffect(() => {
-    const id = setInterval(load, 15_000);
+    const id = setInterval(refresh, 15_000);
     return () => clearInterval(id);
-  }, [load]);
+  }, [refresh]);
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
@@ -53,7 +61,7 @@ export function ManageDashboard({ role }: { role: Extract<Role, "HOSPITAL" | "DO
     try {
       await fn();
       setRejecting(null);
-      load();
+      refresh();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -98,7 +106,7 @@ export function ManageDashboard({ role }: { role: Extract<Role, "HOSPITAL" | "DO
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
-      <AnimatePresence>{walkIn && doctors && <WalkInForm doctors={doctors} onClose={() => setWalkIn(false)} onAdded={load} />}</AnimatePresence>
+      <AnimatePresence>{walkIn && doctors && <WalkInForm doctors={doctors} onClose={() => setWalkIn(false)} onAdded={refresh} />}</AnimatePresence>
 
       <Panel
         title="Bookings"
@@ -115,6 +123,7 @@ export function ManageDashboard({ role }: { role: Extract<Role, "HOSPITAL" | "DO
           />
         }
       >
+        {tab === "today" && <QueueBar hospitalSlug={ov?.hospital?.slug} refreshKey={tick} onCalled={refresh} />}
         {appts === null ? (
           <div className="h-40 animate-pulse rounded-2xl bg-mist" />
         ) : rows.length === 0 ? (
@@ -143,6 +152,7 @@ export function ManageDashboard({ role }: { role: Extract<Role, "HOSPITAL" | "DO
                       </p>
                       <StatusBadge status={a.status} />
                       {a.walkIn && <Badge tone="ink">Walk-in</Badge>}
+                      {a.calledAt && a.status === "CONFIRMED" && <Badge tone="blue">Called</Badge>}
                       {a.paidAt && (
                         <Badge tone="green">
                           <IndianRupee className="size-3" /> Paid
@@ -213,7 +223,7 @@ export function ManageDashboard({ role }: { role: Extract<Role, "HOSPITAL" | "DO
       </Panel>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <DoctorsPanel role={role} doctors={doctors} today={ov?.today} onChange={load} />
+        <DoctorsPanel role={role} doctors={doctors} today={ov?.today} onChange={refresh} />
         <EventsPanel role={role} onChange={load} />
       </div>
 
