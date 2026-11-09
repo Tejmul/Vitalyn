@@ -62,6 +62,7 @@ export interface Hospital {
   etaMinutes: number | null;
   sponsored: boolean;
   highlight?: string | null;
+  promotionId?: string;
   _count?: { doctors: number; events: number };
 }
 
@@ -131,6 +132,7 @@ export interface Promotion {
   active: boolean;
   archivedAt?: string | null;
   hospital: { id: string; name: string; city: string; slug: string };
+  stats?: PromoStats;
 }
 
 export interface HospitalApplication {
@@ -166,4 +168,10 @@ export interface PublicReview {
   displayName: string;
   doctorName: string | null;
   createdAt: string;
+}
+
+export interface PromoStats {
+  impressions: number;
+  clicks: number;
+  bookings: number;
 }
