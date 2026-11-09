@@ -75,3 +75,9 @@ export function useAuth() {
   if (!ctx) throw new Error("useAuth must be used inside <AuthProvider>");
   return ctx;
 }
+
+/** Hospital manager (not reception): can change doctors, schedules, the profile, events and staff. */
+export function useIsManager() {
+  const { user } = useAuth();
+  return user?.role === "HOSPITAL" && user.staffRole === "MANAGER";
+}

@@ -8,6 +8,7 @@ export interface User {
   email: string | null;
   phone: string | null;
   role: Role;
+  staffRole?: "MANAGER" | "RECEPTION" | null;
   hospitalId: string | null;
   hospital?: { id: string; name: string; slug: string } | null;
   consentAt?: string | null;
