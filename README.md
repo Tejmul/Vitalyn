@@ -196,6 +196,7 @@ Base URL `/api`. Authenticated routes need `Authorization: Bearer <token>`. Erro
 | GET | `/hospitals/specialties` | filter chips |
 | GET | `/hospitals/:slug` | hospital, doctors (with hours and leave days), upcoming events |
 | GET | `/hospitals/doctors/:id/slots?date=YYYY-MM-DD` | each slot with `available` |
+| GET | `/hospitals/:slug/reviews` | visible verified reviews (first name + initial) with the average |
 | GET | `/hospitals/:slug/queue` | public "Now serving" board (tokens only, no names) for the waiting-room TV at `/queue/:slug` |
 | GET | `/events` | upcoming events across hospitals |
 
@@ -215,6 +216,7 @@ Base URL `/api`. Authenticated routes need `Authorization: Bearer <token>`. Erro
 | POST | `/appointments/:id/cancel` | any time before the visit |
 | POST | `/appointments/:id/reschedule` | `date`, `time`; up to 2 hours before |
 | GET | `/appointments/:id/queue` | on the day: now serving, people ahead, rough wait |
+| POST | `/appointments/:id/review` | `rating` 1–5, `comment?`, `consent: true`; only after Arrived, once, within 30 days |
 
 </details>
 
@@ -250,6 +252,7 @@ Base URL `/api`. Authenticated routes need `Authorization: Bearer <token>`. Erro
 | GET | `/admin/hospitals/:id/doctors` | doctors with registration numbers |
 | PATCH | `/admin/doctors/:id` | mark a doctor's registration number verified (or not) |
 | GET | `/admin/audit` | admin audit log |
+| GET / PATCH | `/admin/reviews` | review moderation: hide with a reason, or restore (rating recalculates) |
 | GET / POST / PATCH | `/admin/incidents` | breach and incident log with reporting clocks |
 | GET | `/admin/users` | recent sign-ups |
 | GET / POST | `/admin/promotions` | list, create |
@@ -279,6 +282,7 @@ Built with India's Digital Personal Data Protection Act, 2023 in mind:
 - **Consent log:** every agreement to the privacy notice (with its version and the 18+ confirmation) and every withdrawal is recorded. The record outlives a deleted account, without the person's name or number.
 - **Admin audit log:** every admin decision and every view of patient data is logged (who, what, when, from where). Phone numbers are masked in admin lists.
 - **Incident log:** admins log breaches and cyber incidents and see the CERT-In (6 hours) and Data Protection Board (72 hours) reporting clocks, counted from detection.
+- **Ratings come only from verified reviews:** a patient can review a visit only after the hospital marks them Arrived, once, within 30 days, with consent to show their first name and initial. Hidden reviews drop out of the average. New hospitals show "New" and rank neutrally.
 - **Trust badges are facts only:** NABH/NABL/JCI accreditation and doctor registration numbers are shown only after the platform admin checks them. Promotions are archived, never deleted, so the record of what was sold stays.
 - We collect the minimum: name, age, gender, relation, and an optional reason for visit.
 
@@ -336,7 +340,7 @@ The expiry job runs inside the API process. With more than one API instance, mov
 - [ ] UPI prepayment with automatic refunds (Razorpay)
 - [x] Live token queue: Call next at the desk, "Now serving" TV screen, patient position and "your turn is near" alerts
 - [ ] Hindi and regional languages
-- [ ] Verified reviews after a visit
+- [x] Verified reviews after a visit (ratings come only from these)
 - [ ] ABDM: ABHA linking and Scan & Share
 
 ## SMS (MSG91)
