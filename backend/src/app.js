@@ -18,7 +18,7 @@ import { errorHandler, notFoundHandler } from "./middleware/error.js";
 
 export function createApp() {
   const app = express();
-  app.set("trust proxy", 1);
+  app.set("trust proxy", config.trustProxy);
   app.use(helmet());
   // credentials: true lets the browser send the httpOnly refresh cookie
   app.use(cors({ origin: config.corsOrigins, credentials: true }));

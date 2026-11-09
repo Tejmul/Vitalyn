@@ -8,9 +8,24 @@ function required(name) {
 
 const isProd = process.env.NODE_ENV === "production";
 
+/**
+ * Which proxies to trust for the client IP (rate limits and audit log use it).
+ * Must match the real hosting: a number of proxy hops, "false" when the API is reached
+ * directly, or a list of trusted addresses/subnets. A wrong value lets clients pick their
+ * own IP through X-Forwarded-For, or puts every user behind one shared limit.
+ */
+function trustProxy(raw) {
+  const v = raw.trim().toLowerCase();
+  if (v === "false" || v === "0") return false;
+  if (v === "true") throw new Error("TRUST_PROXY=true trusts any X-Forwarded-For; set a hop count or subnet list");
+  if (/^\d+$/.test(v)) return Number(v);
+  return raw.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
 export const config = {
   port: Number(process.env.PORT ?? 4000),
   isProd,
+  trustProxy: trustProxy(process.env.TRUST_PROXY || "1"),
   jwtSecret: required("JWT_SECRET"),
   // Short-lived access token; the httpOnly refresh cookie renews it.
   accessTtl: process.env.ACCESS_TOKEN_TTL ?? "15m",
