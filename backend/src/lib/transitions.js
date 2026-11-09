@@ -101,6 +101,15 @@ export function logEvent(db, appointmentId, { action, from = null, to, note, act
 }
 
 /**
+ * Row lock for the rest of transaction `tx`. Two changes to the same booking (desk and doctor both
+ * accepting, accept vs cancel, accept vs expiry) then run one after the other, and the second one
+ * sees the first one's result instead of overwriting it.
+ */
+export function lockAppointment(tx, appointmentId) {
+  return tx.$queryRaw`SELECT id FROM "Appointment" WHERE id = ${appointmentId} FOR UPDATE`;
+}
+
+/**
  * Applies `action` to an appointment inside transaction `tx`.
  * Checks the move is allowed, issues the token on accept, logs it and notifies the patient.
  */
@@ -109,6 +118,7 @@ export async function transition(tx, appointmentId, action, { actorId = null, ro
   if (!rule) throw new HttpError(400, `Unknown action ${action}`);
   if (!rule.roles.includes(role)) throw forbidden(`Only ${rule.roles.join(" or ").toLowerCase()} accounts can do that`);
 
+  await lockAppointment(tx, appointmentId);
   const appt = await tx.appointment.findUnique({ where: { id: appointmentId }, include: { doctor: true, hospital: { select: { name: true } } } });
   if (!appt) throw new HttpError(404, "Appointment not found");
   if (scope?.hospitalId && appt.hospitalId !== scope.hospitalId) throw new HttpError(404, "Appointment not found");
