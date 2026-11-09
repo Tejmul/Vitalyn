@@ -14,6 +14,8 @@ import { DoctorForm } from "./DoctorForm";
 import { HospitalProfile } from "./HospitalProfile";
 import { QueueBar } from "./QueueBar";
 import { YourPromotions } from "./YourPromotions";
+import { StaffPanel } from "./StaffPanel";
+import { useIsManager } from "@/lib/auth";
 
 type Overview = {
   hospital: { id: string; name: string; slug: string; city: string } | null;
@@ -27,6 +29,7 @@ const REJECT_REASONS = ["Fully booked", "Doctor on leave", "Needs a referral", "
 
 /** Hospital front desk and doctor workspace. Every decision is a button. */
 export function ManageDashboard({ role }: { role: Extract<Role, "HOSPITAL" | "DOCTOR"> }) {
+  const isManager = useIsManager();
   const [ov, setOv] = useState<Overview | null>(null);
   const [appts, setAppts] = useState<Appointment[] | null>(null);
   const [doctors, setDoctors] = useState<Doctor[] | null>(null);
@@ -225,11 +228,12 @@ export function ManageDashboard({ role }: { role: Extract<Role, "HOSPITAL" | "DO
 
       <div className="grid gap-6 lg:grid-cols-2">
         <DoctorsPanel role={role} doctors={doctors} today={ov?.today} onChange={refresh} />
-        <EventsPanel role={role} onChange={load} />
+        <EventsPanel onChange={load} />
       </div>
 
-      {role === "HOSPITAL" && <YourPromotions />}
-      {role === "HOSPITAL" && <HospitalProfile />}
+      {isManager && <StaffPanel />}
+      {isManager && <YourPromotions />}
+      {isManager && <HospitalProfile />}
     </div>
   );
 }
@@ -375,6 +379,7 @@ function ScheduleEditor({ d, onSaved }: { d: Doctor; onSaved: () => void }) {
 }
 
 function DoctorsPanel({ role, doctors, today, onChange }: { role: Role; doctors: Doctor[] | null; today?: string; onChange: () => void }) {
+  const isManager = useIsManager();
   // editing = "<doctorId>:hours" | "<doctorId>:details" | "new"
   const [editing, setEditing] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -420,7 +425,7 @@ function DoctorsPanel({ role, doctors, today, onChange }: { role: Role; doctors:
     <Panel
       title={role === "DOCTOR" ? "My schedule" : "Doctors"}
       action={
-        role === "HOSPITAL" && editing !== "new" ? (
+        isManager && editing !== "new" ? (
           <Button size="sm" onClick={() => setEditing("new")}>
             <UserPlus className="size-4" /> Add doctor
           </Button>
@@ -468,7 +473,7 @@ function DoctorsPanel({ role, doctors, today, onChange }: { role: Role; doctors:
                   )}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {role === "HOSPITAL" && d.active && (
+                  {isManager && d.active && (
                     <button
                       onClick={() => patch(d, { autoConfirm: !d.autoConfirm }, "auto")}
                       role="switch"
@@ -485,7 +490,7 @@ function DoctorsPanel({ role, doctors, today, onChange }: { role: Role; doctors:
                       <CalendarX2 className="size-4" /> On leave today
                     </Button>
                   )}
-                  {role === "HOSPITAL" && (
+                  {isManager && (
                     <>
                       <Button size="sm" variant="ghost" className="h-9" onClick={() => setEditing(editing === d.id + ":hours" ? null : d.id + ":hours")}>
                         {editing === d.id + ":hours" ? "Close" : "Edit hours"}
@@ -524,7 +529,7 @@ function DoctorsPanel({ role, doctors, today, onChange }: { role: Role; doctors:
           );
         })}
       </ul>
-      {role === "HOSPITAL" && (
+      {isManager && (
         <p className="mt-2 text-[12.5px] text-muted">Auto-confirm on: bookings are confirmed instantly with a token. Off: the desk or the doctor accepts each request, and unanswered requests expire.</p>
       )}
     </Panel>
@@ -533,7 +538,8 @@ function DoctorsPanel({ role, doctors, today, onChange }: { role: Role; doctors:
 
 const EVENT_TYPES = Object.keys(EVENT_TYPE) as EventType[];
 
-function EventsPanel({ role, onChange }: { role: Role; onChange: () => void }) {
+function EventsPanel({ onChange }: { onChange: () => void }) {
+  const isManager = useIsManager();
   const [events, setEvents] = useState<HospitalEvent[] | null>(null);
   const [adding, setAdding] = useState(false);
   const [f, setF] = useState({ title: "", description: "", type: "HEALTH_CAMP" as EventType, date: "", from: "09:00", to: "13:00", venue: "", isFree: true });
@@ -588,7 +594,7 @@ function EventsPanel({ role, onChange }: { role: Role; onChange: () => void }) {
     <Panel
       title="Events & camps"
       action={
-        role === "HOSPITAL" && !adding ? (
+        isManager && !adding ? (
           <Button size="sm" onClick={() => setAdding(true)}>
             <CalendarPlus className="size-4" /> Add event
           </Button>
@@ -660,7 +666,7 @@ function EventsPanel({ role, onChange }: { role: Role; onChange: () => void }) {
                   {EVENT_TYPE[e.type]} · {eventWhen(e.startsAt, e.endsAt)}
                 </p>
               </div>
-              {role === "HOSPITAL" && (
+              {isManager && (
                 <button onClick={() => remove(e.id)} className="grid size-9 shrink-0 place-items-center rounded-full text-muted hover:bg-rose/8 hover:text-rose" aria-label={`Delete ${e.title}`}>
                   <Trash2 className="size-4" />
                 </button>
