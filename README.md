@@ -296,6 +296,12 @@ Built with India's Digital Personal Data Protection Act, 2023 in mind:
 
 The full research behind these choices (15 apps compared, Indian regulations, monetisation, roadmap) is in [`docs/research`](docs/research/india-hospital-booking-research.pdf).
 
+## Security
+
+Findings from a source review with the [Cloudflare security-audit skill](https://github.com/cloudflare/security-audit-skill), and what was done about each:
+
+- **Tokens are bound to their purpose.** Access tokens carry `typ: "access"` and an `access` audience; the short sign-up token (proof a phone passed OTP, no account yet) carries `signup`. Each is only accepted where it belongs, and the signing algorithm is pinned to HS256. Before this, a sign-up token passed as a login on routes that only needed "someone signed in".
+
 ## Project structure
 
 ```
