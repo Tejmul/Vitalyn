@@ -13,6 +13,7 @@ import { profilesRouter } from "./routes/profiles.js";
 import { meRouter } from "./routes/me.js";
 import { onboardingRouter } from "./routes/onboarding.js";
 import { savedRouter } from "./routes/saved.js";
+import { promotionsRouter } from "./routes/promotions.js";
 import { errorHandler, notFoundHandler } from "./middleware/error.js";
 
 export function createApp() {
@@ -34,6 +35,7 @@ export function createApp() {
   app.use("/api/me", meRouter);
   app.use("/api/onboarding", onboardingRouter);
   app.use("/api/saved", savedRouter);
+  app.use("/api/promotions", promotionsRouter);
   app.use(notFoundHandler);
   app.use(errorHandler);
   return app;
