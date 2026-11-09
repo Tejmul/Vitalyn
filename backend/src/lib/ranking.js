@@ -69,7 +69,7 @@ export function applySponsoredBoost(ranked, promoByHospital) {
     target = Math.min(target, out.length);
     if (target < 5) inTop5++;
     const p = promoByHospital.get(h.id);
-    out.splice(target, 0, { ...h, sponsored: true, highlight: p.highlight, promoTitle: p.title });
+    out.splice(target, 0, { ...h, sponsored: true, highlight: p.highlight, promoTitle: p.title, promotionId: p.id });
   }
   return out;
 }

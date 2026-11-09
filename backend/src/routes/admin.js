@@ -5,6 +5,7 @@ import { HttpError, notFound } from "../lib/http.js";
 import { toneFor, uniqueSlug } from "../lib/slug.js";
 import { audit, maskPhone } from "../lib/audit.js";
 import { recomputeRating } from "../lib/reviews.js";
+import { promoTotals } from "../lib/promoStats.js";
 import { assertNoBannedClaims } from "../lib/claims.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -94,7 +95,8 @@ adminRouter.get("/promotions", async (_req, res) => {
     orderBy: [{ archivedAt: { sort: "asc", nulls: "first" } }, { active: "desc" }, { priority: "desc" }],
     include: { hospital: { select: { id: true, name: true, city: true, slug: true } } },
   });
-  res.json({ promotions });
+  const totals = await promoTotals(prisma, promotions.map((p) => p.id));
+  res.json({ promotions: promotions.map((p) => ({ ...p, stats: totals.get(p.id) ?? { impressions: 0, clicks: 0, bookings: 0 } })) });
 });
 
 const promoSchema = z

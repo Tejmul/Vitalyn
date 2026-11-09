@@ -57,7 +57,7 @@ export function HospitalCard({ h, showHighlight }: { h: Hospital; showHighlight?
       <div className="flex flex-1 flex-col p-5">
         <div className="flex items-start justify-between gap-3">
           <h3 className="font-display text-[19px] font-bold leading-tight tracking-[-0.03em] text-ink">
-            <Link href={`/hospitals/${h.slug}`} className="after:absolute after:inset-0 after:content-['']">
+            <Link href={h.sponsored && h.promotionId ? `/hospitals/${h.slug}?via=promo&pid=${h.promotionId}` : `/hospitals/${h.slug}`} className="after:absolute after:inset-0 after:content-['']">
               {h.name}
             </Link>
           </h3>

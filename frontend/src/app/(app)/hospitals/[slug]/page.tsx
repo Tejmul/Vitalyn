@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
@@ -19,6 +19,7 @@ import { SlotPicker } from "@/components/app/SlotPicker";
 import { ProfilePicker, defaultProfileId, useProfiles } from "@/components/app/Family";
 import { SaveButton } from "@/components/app/SaveButton";
 import { HospitalReviews } from "@/components/app/Reviews";
+import { promoFor, recordPromoVisit } from "@/lib/promoAttribution";
 
 type Full = Hospital & { doctors: Doctor[]; events: HospitalEvent[] };
 
@@ -28,7 +29,15 @@ export default function HospitalPage() {
   const req = useApi<{ hospital: Full }>(`/hospitals/${slug}`, { lat: place.lat, lng: place.lng });
   const h = req.data?.hospital ?? null;
   // "Book again" links pass ?doctor=<id> to open with that doctor selected
-  const [doctorId, setDoctorId] = useState<string | null>(useSearchParams().get("doctor"));
+  const search = useSearchParams();
+  const [doctorId, setDoctorId] = useState<string | null>(search.get("doctor"));
+  const via = search.get("via");
+  const pid = search.get("pid");
+
+  // Came from a sponsored card: count the click (once per session) and remember it for a booking here
+  useEffect(() => {
+    if (via === "promo" && pid) recordPromoVisit(slug, pid);
+  }, [via, pid, slug]);
   const [dept, setDept] = useState("All");
 
   if (req.error)
@@ -259,9 +268,18 @@ function BookingPanel({ doctor, hospitalSlug }: { doctor: Doctor | null; hospita
   const { user, ready } = useAuth();
   const isPatient = user?.role === "USER";
   const fam = useProfiles(Boolean(isPatient));
+  // Open on the first day the doctor still has OPD time left (skips today once today's hours are over)
   const [date, setDate] = useState(() => {
     const days = nextDays(7);
-    return days.find((d) => !doctor || (doctor.workingDays.includes(new Date(`${d}T00:00:00`).getDay()) && !doctor.leaveDates?.includes(d))) ?? days[0];
+    const now = new Date();
+    const nowHHMM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    return (
+      days.find((d, i) => {
+        if (!doctor) return true;
+        if (!doctor.workingDays.includes(new Date(`${d}T00:00:00`).getDay()) || doctor.leaveDates?.includes(d)) return false;
+        return i > 0 || nowHHMM < doctor.endTime;
+      }) ?? days[0]
+    );
   });
   const [time, setTime] = useState<string | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
@@ -334,7 +352,7 @@ function BookingPanel({ doctor, hospitalSlug }: { doctor: Doctor | null; hospita
     try {
       const r = await api<{ appointment: Appointment }>("/appointments", {
         method: "POST",
-        body: { doctorId: doctor.id, date, time, profileId: pid, reason: reason || undefined },
+        body: { doctorId: doctor.id, date, time, profileId: pid, reason: reason || undefined, promotionId: promoFor(hospitalSlug) },
       });
       setDone(r.appointment);
     } catch (e) {

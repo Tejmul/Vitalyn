@@ -237,6 +237,9 @@ model Appointment {
   profile    PatientProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
   events     AppointmentEvent[]
   review     Review?
+  // Set when the booking came from a sponsored card (promotion analytics)
+  promotionId String?
+  promotion   Promotion? @relation(fields: [promotionId], references: [id], onDelete: SetNull)
   doctorId   String
   doctor     Doctor   @relation(fields: [doctorId], references: [id])
   hospitalId String
@@ -337,6 +340,21 @@ model Promotion {
 
   hospitalId String
   hospital   Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+  stats      PromotionStat[]
+  bookings   Appointment[]
+}
+
+/// Daily counts for a promotion. No personal data: just numbers.
+model PromotionStat {
+  date        String @db.Char(10) // IST day, YYYY-MM-DD
+  impressions Int    @default(0) // sponsored card shown in recommendations
+  clicks      Int    @default(0) // hospital opened from that card
+  bookings    Int    @default(0) // booking at that hospital in the same session
+
+  promotionId String
+  promotion   Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  @@id([promotionId, date])
 }
 
 /// A review from a patient whose visit was marked Arrived. One per visit.
