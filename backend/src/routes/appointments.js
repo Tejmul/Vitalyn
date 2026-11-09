@@ -5,6 +5,7 @@ import { HttpError, notFound } from "../lib/http.js";
 import { ACTIVE_STATUSES, isPast, slotStart, slotsForDay, todayIST } from "../lib/slots.js";
 import { doctorQueue } from "../lib/queue.js";
 import { REVIEW_WINDOW_DAYS, recomputeRating, reviewerName } from "../lib/reviews.js";
+import { bumpPromo } from "../lib/promoStats.js";
 import { MESSAGES, approveDeadline, isSlotClash, logEvent, nextToken, smsVars, tokenCode, transition, withTokenRetry } from "../lib/transitions.js";
 import { notify } from "../lib/notify.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -44,6 +45,8 @@ appointmentsRouter.post("/", async (req, res) => {
       ...slotSchema,
       profileId: z.string().min(1, "Choose who the appointment is for"),
       reason: z.string().trim().max(300).optional(),
+      // The sponsored card the patient came from, if any (analytics only)
+      promotionId: z.string().max(40).optional(),
     })
     .parse(req.body);
 
@@ -54,6 +57,11 @@ appointmentsRouter.post("/", async (req, res) => {
   if (!doctor) throw notFound("Doctor");
   if (!profile || profile.userId !== req.user.id) throw notFound("Family member");
   await assertBookable(doctor, data.date, data.time);
+
+  // Credit a promotion only if it is live and for this same hospital; otherwise ignore it.
+  const promo = data.promotionId
+    ? await prisma.promotion.findFirst({ where: { id: data.promotionId, hospitalId: doctor.hospitalId, active: true, archivedAt: null } })
+    : null;
 
   try {
     // Auto-confirm doctors: confirmed with a token straight away. Otherwise it waits for one approver.
@@ -74,10 +82,12 @@ appointmentsRouter.post("/", async (req, res) => {
             status: confirmed ? "CONFIRMED" : "PENDING",
             tokenNumber: confirmed ? await nextToken(tx, doctor.id, data.date) : null,
             approveBy: confirmed ? null : approveDeadline(data.date, data.time),
+            promotionId: promo?.id ?? null,
           },
           include,
         });
         await logEvent(tx, a.id, { action: "book", to: a.status, note: confirmed ? "Auto-confirmed" : null, actorId: req.user.id });
+        if (promo) await bumpPromo(tx, promo.id, "bookings");
         if (confirmed) {
           await notify(tx, req.user.id, { ...MESSAGES.confirmed(a, doctor), appointmentId: a.id, sms: { kind: "CONFIRMED", vars: smsVars(a, doctor, a.hospital) } });
         }
