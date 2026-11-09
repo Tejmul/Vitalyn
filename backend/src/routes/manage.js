@@ -7,6 +7,8 @@ import { ACTIVE_STATUSES, nowHHMMIST, todayIST } from "../lib/slots.js";
 import { indianMobile } from "../lib/schemas.js";
 import { isSlotClash, logEvent, nextToken, smsVars, transition, withTokenRetry } from "../lib/transitions.js";
 import { queueSms } from "../lib/notify.js";
+import { callNext, doctorQueue } from "../lib/queue.js";
+import { tokenCode } from "../lib/transitions.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
 
@@ -167,6 +169,39 @@ manageRouter.post("/walk-ins", requireRole("HOSPITAL"), async (req, res) => {
     }
   }
   throw new HttpError(409, "Couldn't find a free minute in the queue. Please try again");
+});
+
+/** Today's queue per doctor (desk sees all its doctors, a doctor sees their own). */
+manageRouter.get("/queue", async (req, res) => {
+  const s = await scope(req.user);
+  const doctors = await prisma.doctor.findMany({
+    where: { hospitalId: s.hospitalId, active: true, ...(s.doctorId ? { id: s.doctorId } : {}) },
+    orderBy: { name: "asc" },
+  });
+  const queues = [];
+  for (const d of doctors) {
+    const q = await doctorQueue(prisma, d.id);
+    if (!q.serving && q.waiting.length === 0) continue;
+    queues.push({
+      doctorId: d.id,
+      doctorName: d.name,
+      specialty: d.specialty,
+      serving: q.serving ? { id: q.serving.id, token: tokenCode(q.serving.tokenNumber, d.name), patientName: q.serving.patientName } : null,
+      next: q.waiting.slice(0, 3).map((w) => ({ id: w.id, token: tokenCode(w.tokenNumber, d.name), patientName: w.patientName })),
+      waiting: q.waiting.length,
+    });
+  }
+  res.json({ queues });
+});
+
+/** Call the next token for a doctor. */
+manageRouter.post("/doctors/:id/call-next", async (req, res) => {
+  const s = await scope(req.user);
+  const doctor = await ownDoctor(s, String(req.params.id), { activeOnly: true });
+  const hospital = await prisma.hospital.findUnique({ where: { id: s.hospitalId }, select: { name: true } });
+  const result = await prisma.$transaction((tx) => callNext(tx, doctor, hospital.name));
+  if (!result.called) throw new HttpError(409, `No one is waiting for ${doctor.name}`);
+  res.json(result);
 });
 
 manageRouter.get("/doctors", async (req, res) => {

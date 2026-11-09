@@ -120,6 +120,40 @@ function MoveSheet({ a, onClose, onMoved }: { a: Appointment; onClose: () => voi
   );
 }
 
+type QueueStatus = { live: false } | { live: true; called: boolean; myToken: string; serving: string | null; ahead: number; etaMinutes: number };
+
+/** On the day of a confirmed visit: now serving, people ahead and a rough wait. Refreshes every 30 s. */
+function QueueLive({ id }: { id: string }) {
+  const req = useApi<QueueStatus>(`/appointments/${id}/queue`);
+  const { reload } = req;
+  useEffect(() => {
+    const t = setInterval(reload, 30_000);
+    return () => clearInterval(t);
+  }, [reload]);
+  const q = req.data;
+  if (!q || !q.live) return null;
+  return (
+    <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl bg-ink px-5 py-4 text-white" aria-live="polite">
+      <span>
+        <span className="block font-mono text-[10.5px] uppercase tracking-[0.16em] text-white/50">Now serving</span>
+        <span className="font-mono text-[26px] font-bold text-[#8fb0ff]">{q.serving ?? "—"}</span>
+      </span>
+      <span className="text-[15px]">
+        {q.called ? (
+          <b>It&apos;s your turn. Please go to the doctor&apos;s room.</b>
+        ) : q.ahead === 0 ? (
+          <b>You&apos;re next.</b>
+        ) : (
+          <>
+            <b>{q.ahead}</b> {q.ahead === 1 ? "person" : "people"} ahead of you · about <b>{q.etaMinutes} min</b>
+          </>
+        )}
+      </span>
+      <span className="text-[12px] text-white/50">Wait times are a rough guide.</span>
+    </div>
+  );
+}
+
 function NextVisit({ a, onCancel, onMove, busy }: { a: Appointment; onCancel: () => void; onMove: () => void; busy: boolean }) {
   const confirmed = a.status === "CONFIRMED";
   return (
@@ -144,6 +178,7 @@ function NextVisit({ a, onCancel, onMove, busy }: { a: Appointment; onCancel: ()
           <div className="mt-6">
             <Progress a={a} />
           </div>
+          {confirmed && <QueueLive id={a.id} />}
           <p className="mt-3 text-[13.5px] text-muted">{STATUS[a.status].help}.</p>
           <div className="mt-5 flex flex-wrap gap-2">
             {a.hospital && (

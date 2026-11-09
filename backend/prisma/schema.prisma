@@ -221,6 +221,8 @@ model Appointment {
   approveBy   DateTime?
   paidAt      DateTime? // desk pressed "Paid"
   reminderSentAt DateTime? // 2-hour reminder queued
+  calledAt       DateTime? // desk pressed "Call next" for this token
+  tokenNearAt    DateTime? // "your turn is near" alert sent
   walkIn      Boolean   @default(false)
   walkInPhone String?
   createdAt   DateTime @default(now())
@@ -417,6 +419,7 @@ enum IncidentStatus {
 }
 
 enum MessageKind {
+  TOKEN_NEAR
   CONFIRMED
   REMINDER
   REJECTED

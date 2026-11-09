@@ -5,6 +5,8 @@ import { notFound } from "../lib/http.js";
 import { distanceKm, etaMinutes } from "../lib/geo.js";
 import { ACTIVE_STATUSES, isPast, slotsForDay, todayIST } from "../lib/slots.js";
 import { SPONSOR_RULES, applySponsoredBoost, nextFreeSlots, organicScore } from "../lib/ranking.js";
+import { doctorQueue } from "../lib/queue.js";
+import { tokenCode } from "../lib/transitions.js";
 
 export const hospitalsRouter = Router();
 
@@ -105,6 +107,28 @@ hospitalsRouter.get("/recommendations", async (req, res) => {
     .sort((a, b) => (a.distanceKm ?? 0) - (b.distanceKm ?? 0));
 
   res.json({ radiusKm, sponsorRules: SPONSOR_RULES, recommendations: [...ranked, ...farther].slice(0, 6) });
+});
+
+/**
+ * Public "Now serving" board for the waiting-room TV. Tokens only: no patient names.
+ */
+hospitalsRouter.get("/:slug/queue", async (req, res) => {
+  const h = await prisma.hospital.findUnique({ where: { slug: req.params.slug }, select: { id: true, name: true, verified: true } });
+  if (!h || !h.verified) throw notFound("Hospital");
+  const doctors = await prisma.doctor.findMany({ where: { hospitalId: h.id, active: true }, orderBy: { name: "asc" } });
+  const boards = [];
+  for (const d of doctors) {
+    const q = await doctorQueue(prisma, d.id);
+    if (!q.serving && q.waiting.length === 0) continue;
+    boards.push({
+      doctorName: d.name,
+      specialty: d.specialty,
+      serving: q.serving ? tokenCode(q.serving.tokenNumber, d.name) : null,
+      next: q.waiting.slice(0, 3).map((w) => tokenCode(w.tokenNumber, d.name)),
+      waiting: q.waiting.length,
+    });
+  }
+  res.set("Cache-Control", "no-store").json({ hospital: { name: h.name }, boards, updatedAt: new Date().toISOString() });
 });
 
 hospitalsRouter.get("/:slug", async (req, res) => {

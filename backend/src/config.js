@@ -38,6 +38,7 @@ export const config = {
       REJECTED: process.env.MSG91_FLOW_REJECTED ?? "",
       EXPIRED: process.env.MSG91_FLOW_EXPIRED ?? "",
       DOCTOR_LEAVE: process.env.MSG91_FLOW_DOCTOR_LEAVE ?? "",
+      TOKEN_NEAR: process.env.MSG91_FLOW_TOKEN_NEAR ?? "",
     },
   },
 };

@@ -110,6 +110,7 @@ export interface Appointment {
   note: string | null;
   approveBy: string | null;
   paidAt: string | null;
+  calledAt?: string | null;
   walkIn: boolean;
   walkInPhone: string | null;
   createdAt: string;

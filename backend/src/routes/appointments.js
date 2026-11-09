@@ -2,8 +2,9 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { HttpError, notFound } from "../lib/http.js";
-import { ACTIVE_STATUSES, isPast, slotStart, slotsForDay } from "../lib/slots.js";
-import { MESSAGES, approveDeadline, isSlotClash, logEvent, nextToken, smsVars, transition, withTokenRetry } from "../lib/transitions.js";
+import { ACTIVE_STATUSES, isPast, slotStart, slotsForDay, todayIST } from "../lib/slots.js";
+import { doctorQueue } from "../lib/queue.js";
+import { MESSAGES, approveDeadline, isSlotClash, logEvent, nextToken, smsVars, tokenCode, transition, withTokenRetry } from "../lib/transitions.js";
 import { notify } from "../lib/notify.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -96,6 +97,24 @@ appointmentsRouter.get("/me", async (req, res) => {
     include,
   });
   res.json({ appointments });
+});
+
+/** Where am I in today's queue? Only for the patient's own confirmed visit today. */
+appointmentsRouter.get("/:id/queue", async (req, res) => {
+  const appt = await prisma.appointment.findUnique({ where: { id: String(req.params.id) }, include: { doctor: true } });
+  if (!appt || appt.userId !== req.user.id) throw notFound("Appointment");
+  if (appt.status !== "CONFIRMED" || appt.date !== todayIST() || appt.tokenNumber === null) return res.json({ live: false });
+  const q = await doctorQueue(prisma, appt.doctorId, appt.date);
+  const ahead = appt.calledAt ? 0 : q.waiting.filter((w) => w.tokenNumber < appt.tokenNumber).length;
+  res.json({
+    live: true,
+    called: Boolean(appt.calledAt),
+    myToken: tokenCode(appt.tokenNumber, appt.doctor.name),
+    serving: q.serving ? tokenCode(q.serving.tokenNumber, appt.doctor.name) : null,
+    ahead,
+    // A rough guide only: people ahead × the doctor's slot length
+    etaMinutes: ahead * appt.doctor.slotMinutes,
+  });
 });
 
 appointmentsRouter.post("/:id/cancel", async (req, res) => {
