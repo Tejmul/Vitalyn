@@ -111,6 +111,7 @@ export interface Appointment {
   approveBy: string | null;
   paidAt: string | null;
   calledAt?: string | null;
+  review?: { id: string; rating: number; comment: string | null; hidden: boolean } | null;
   walkIn: boolean;
   walkInPhone: string | null;
   createdAt: string;
@@ -155,5 +156,14 @@ export interface HospitalApplication {
   reviewNote: string | null;
   reviewedAt: string | null;
   hospitalId: string | null;
+  createdAt: string;
+}
+
+export interface PublicReview {
+  id: string;
+  rating: number;
+  comment: string | null;
+  displayName: string;
+  doctorName: string | null;
   createdAt: string;
 }
