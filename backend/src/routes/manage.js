@@ -269,7 +269,12 @@ manageRouter.patch("/doctors/:id", requireManager, async (req, res) => {
   const end = data.endTime ?? doc.endTime;
   if (end <= start) throw new HttpError(400, "OPD end time must be after the start time");
   if (data.workingDays) data.workingDays = [...new Set(data.workingDays)].sort();
-  res.json({ doctor: await prisma.doctor.update({ where: { id: doc.id }, data }) });
+  // The admin's "verified" check covers one registration number for one named doctor.
+  // Changing either means it has to be checked again.
+  const changed = (k) => data[k] !== undefined && data[k] !== doc[k];
+  const recheck = doc.registrationVerifiedAt && (changed("registrationNo") || changed("name"));
+  const doctor = await prisma.doctor.update({ where: { id: doc.id }, data: { ...data, ...(recheck ? { registrationVerifiedAt: null } : {}) } });
+  res.json({ doctor, ...(recheck ? { notice: "Registration details changed, so the verified badge is off until the Vitalyn team checks them again" } : {}) });
 });
 
 /**

@@ -274,13 +274,25 @@ adminRouter.get("/hospitals/:id/doctors", async (req, res) => {
   res.json({ doctors });
 });
 
-/** Mark a doctor's council/HPR number as checked against the registry (or undo). */
+/**
+ * Mark a doctor's council/HPR number as checked against the registry (or undo).
+ * Verifying names the number the admin checked; if the hospital changed it in the meantime, nothing is marked.
+ */
 adminRouter.patch("/doctors/:id", async (req, res) => {
-  const { verified } = z.object({ verified: z.boolean() }).parse(req.body);
+  const { verified, registrationNo } = z.object({ verified: z.boolean(), registrationNo: z.string().trim().optional() }).parse(req.body);
   const d = await prisma.doctor.findUnique({ where: { id: String(req.params.id) } });
   if (!d) throw notFound("Doctor");
   if (verified && !d.registrationNo) throw new HttpError(400, "This doctor has no registration number to verify");
-  const doctor = await prisma.doctor.update({ where: { id: d.id }, data: { registrationVerifiedAt: verified ? new Date() : null } });
+  if (verified && registrationNo !== d.registrationNo) {
+    throw new HttpError(409, "The hospital changed this registration number since you loaded it. Check the new one");
+  }
+  // Conditional write: only stamp the number that was checked
+  const done = await prisma.doctor.updateMany({
+    where: { id: d.id, ...(verified ? { registrationNo: d.registrationNo } : {}) },
+    data: { registrationVerifiedAt: verified ? new Date() : null },
+  });
+  if (done.count === 0) throw new HttpError(409, "The hospital changed this registration number since you loaded it. Check the new one");
+  const doctor = await prisma.doctor.findUnique({ where: { id: d.id } });
   await audit(prisma, req, verified ? "doctor.verify" : "doctor.unverify", { target: d.id, meta: { registrationNo: d.registrationNo } });
   res.json({ doctor });
 });
