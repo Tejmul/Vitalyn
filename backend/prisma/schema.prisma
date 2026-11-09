@@ -16,6 +16,10 @@ model User {
   email        String?  @unique
   name         String
   role         Role     @default(USER)
+  // For HOSPITAL accounts: MANAGER runs the hospital's setup and staff; RECEPTION does the daily desk work
+  staffRole    StaffRole?
+  // Set when a manager removes someone's access; they can't log in and their sessions end
+  disabledAt   DateTime?
   // DPDP: when and to which notice version the user consented
   consentAt      DateTime?
   consentVersion String?
@@ -447,6 +451,11 @@ enum AppointmentStatus {
   CANCELLED
   NO_SHOW
   EXPIRED
+}
+
+enum StaffRole {
+  MANAGER
+  RECEPTION
 }
 
 enum ConsentAction {
