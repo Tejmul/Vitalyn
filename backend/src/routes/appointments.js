@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { HttpError, notFound } from "../lib/http.js";
 import { ACTIVE_STATUSES, isPast, slotStart, slotsForDay, todayIST } from "../lib/slots.js";
 import { doctorQueue } from "../lib/queue.js";
+import { REVIEW_WINDOW_DAYS, recomputeRating, reviewerName } from "../lib/reviews.js";
 import { MESSAGES, approveDeadline, isSlotClash, logEvent, nextToken, smsVars, tokenCode, transition, withTokenRetry } from "../lib/transitions.js";
 import { notify } from "../lib/notify.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
@@ -17,6 +18,7 @@ const include = {
   doctor: { select: { id: true, name: true, specialty: true, fee: true } },
   hospital: { select: { id: true, name: true, slug: true, address: true, city: true, phone: true, tone: true } },
   profile: { select: { id: true, name: true, relation: true } },
+  review: { select: { id: true, rating: true, comment: true, hidden: true } },
 };
 
 const slotSchema = {
@@ -97,6 +99,43 @@ appointmentsRouter.get("/me", async (req, res) => {
     include,
   });
   res.json({ appointments });
+});
+
+/**
+ * Review a visit. Only the patient who booked it, only after the desk marked them Arrived,
+ * once per visit, within 30 days. The patient agrees to show their first name and initial.
+ */
+appointmentsRouter.post("/:id/review", async (req, res) => {
+  const data = z
+    .object({
+      rating: z.coerce.number().int().min(1, "Pick 1 to 5 stars").max(5),
+      comment: z.string().trim().max(500, "Keep it under 500 characters").optional().or(z.literal("").transform(() => undefined)),
+      consent: z.literal(true, { error: "Please agree to show your first name and review publicly" }),
+    })
+    .parse(req.body);
+  const appt = await prisma.appointment.findUnique({ where: { id: String(req.params.id) }, include: { review: true } });
+  if (!appt || appt.userId !== req.user.id) throw notFound("Appointment");
+  if (appt.status !== "COMPLETED") throw new HttpError(400, "You can review a visit after the hospital marks you as arrived");
+  if (appt.review) throw new HttpError(409, "You've already reviewed this visit");
+  const visit = slotStart(appt.date, appt.time).getTime();
+  if (Date.now() - visit > REVIEW_WINDOW_DAYS * 86_400_000) throw new HttpError(400, `Reviews can be left up to ${REVIEW_WINDOW_DAYS} days after the visit`);
+
+  const review = await prisma.$transaction(async (tx) => {
+    const r = await tx.review.create({
+      data: {
+        rating: data.rating,
+        comment: data.comment,
+        displayName: reviewerName(appt.patientName),
+        appointmentId: appt.id,
+        hospitalId: appt.hospitalId,
+        doctorId: appt.doctorId,
+        userId: req.user.id,
+      },
+    });
+    await recomputeRating(tx, appt.hospitalId);
+    return r;
+  });
+  res.status(201).json({ review });
 });
 
 /** Where am I in today's queue? Only for the patient's own confirmed visit today. */
