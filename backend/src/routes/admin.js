@@ -203,6 +203,7 @@ adminRouter.post("/applications/:id/approve", async (req, res) => {
         email: app.contactEmail,
         phone: app.contactPhone,
         role: "HOSPITAL",
+        staffRole: "MANAGER", // the applicant runs the hospital's Vitalyn account
         hospitalId: hospital.id,
         consentAt: app.consentAt,
         consentVersion: "hospital-terms-2026-11",

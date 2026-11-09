@@ -33,6 +33,9 @@ export const CONSENT_VERSION = "2026-11-v1";
 
 authRouter.post("/otp/request", otpLimiter, async (req, res) => {
   const { phone } = z.object({ phone: indianMobile }).parse(req.body);
+  // Don't text codes to accounts a hospital manager has turned off
+  const existing = await prisma.user.findUnique({ where: { phone }, select: { disabledAt: true } });
+  if (existing?.disabledAt) throw new HttpError(403, "This account has been turned off. Ask your hospital manager");
   res.json(await requestOtp(phone, "LOGIN"));
 });
 
@@ -43,6 +46,7 @@ authRouter.post("/otp/verify", otpLimiter, async (req, res) => {
   await verifyOtp(phone, "LOGIN", code);
 
   const user = await prisma.user.findUnique({ where: { phone } });
+  if (user?.disabledAt) throw new HttpError(403, "This account has been turned off. Ask your hospital manager");
   if (user) {
     const accessToken = await startSession(req, res, user);
     return res.json({ accessToken, user: publicUser(user) });

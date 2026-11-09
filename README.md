@@ -43,7 +43,8 @@ Vitalyn has four kinds of users. Everything is done with buttons, because the pe
 | Who | What they can do |
 |---|---|
 | **Patient** | Save hospitals to **My hospitals**, **Book again** from past visits, WhatsApp the hospital desk, find hospitals nearest first (GPS, city, area or PIN code), see distance, travel time and the next free slot, book a slot in three taps, book for up to 6 family members, move or cancel a booking, follow each approval step, see the token, get in-app updates, download or delete their data |
-| **Hospital desk** | Add and edit **doctors** (with council/HPR registration number), work from a **Today** queue sorted by token, approve / confirm / reject (with a one-tap reason), mark **Arrived**, **Didn't come** or **Paid**, add a **walk-in** in two taps, set each doctor's OPD days and hours, mark a doctor **on leave**, post health camps and events |
+| **Hospital manager** | Add **staff logins** (manager, reception, or a doctor's own login) and turn access off, plus everything reception does and: add and edit **doctors** (with council/HPR registration number), work from a **Today** queue sorted by token, approve / confirm / reject (with a one-tap reason), mark **Arrived**, **Didn't come** or **Paid**, add a **walk-in** in two taps, set each doctor's OPD days and hours, mark a doctor **on leave**, post health camps and events |
+| **Reception** | The daily desk work: Today queue, Call next, accept/reject, Arrived / Didn't come / Paid, walk-ins, doctor on leave |
 | **Doctor** | See only their own patients, accept or reject requests (when not on auto-confirm), mark themselves on leave |
 | **Platform admin** | Review **hospital applications** from /list-your-hospital, verify accreditations and doctor registration numbers, keep the **audit** and **incident** logs, run **sponsored hospital** promotions (with priority, dates and pause), verify hospitals and record their registration and ABDM HFR IDs, see bookings, cancellations, no-shows and expiries per hospital |
 
@@ -157,7 +158,8 @@ Everyone logs in with a mobile number and a one-time code. Without MSG91 keys (d
 | Role | Mobile |
 |---|---|
 | Patient (with a family member) | `98000 00001` |
-| Hospital desk, Sabarmati Care | `98000 00002` |
+| Hospital manager, Sabarmati Care | `98000 00002` |
+| Reception, Sabarmati Care | `98000 00005` |
 | Doctor, Dr. Kavita Shah | `98000 00003` |
 | Platform admin | `98000 00004` |
 
@@ -239,7 +241,9 @@ Base URL `/api`. Authenticated routes need `Authorization: Bearer <token>`. Erro
 | GET / PATCH | `/manage/hospital` | hospital | the hospital's own profile, including the desk's WhatsApp number |
 | GET | `/manage/promotions` | hospital | its own promotions with views, clicks and bookings (read-only) |
 | POST / DELETE | `/manage/doctors/:id/leave` | hospital, doctor | cancels that day's bookings and notifies patients |
-| GET / POST / DELETE | `/manage/events` | hospital | health camps, drives, talks |
+| GET / POST / DELETE | `/manage/events` | hospital (POST/DELETE: manager) | health camps, drives, talks |
+| GET / POST | `/manage/staff` | manager | list or add staff: `kind` = MANAGER, RECEPTION or DOCTOR (+ `doctorId`), `name`, `phone` |
+| PATCH | `/manage/staff/:id` | manager | `disabled: true/false`; turning off ends their sessions at once |
 
 </details>
 
@@ -283,6 +287,7 @@ Built with India's Digital Personal Data Protection Act, 2023 in mind:
 - Every booking change is written to an audit log.
 - Sessions use a 15-minute access token kept in memory and a rotating httpOnly refresh cookie. Reusing an old refresh token logs out every session.
 - **Consent log:** every agreement to the privacy notice (with its version and the 18+ confirmation) and every withdrawal is recorded. The record outlives a deleted account, without the person's name or number.
+- **Staff roles:** managers set up the hospital and its staff; reception does the daily desk work; doctors see only their own patients. A manager can turn anyone's access off, which ends their sessions immediately, and a hospital always keeps at least one manager.
 - **Admin audit log:** every admin decision and every view of patient data is logged (who, what, when, from where). Phone numbers are masked in admin lists.
 - **Incident log:** admins log breaches and cyber incidents and see the CERT-In (6 hours) and Data Protection Board (72 hours) reporting clocks, counted from detection.
 - **Ratings come only from verified reviews:** a patient can review a visit only after the hospital marks them Arrived, once, within 30 days, with consent to show their first name and initial. Hidden reviews drop out of the average. New hospitals show "New" and rank neutrally.

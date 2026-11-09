@@ -11,6 +11,7 @@ import { ErrorNote, Field, inputClass } from "@/components/ui/Field";
 const DEMO = [
   { label: "Patient", phone: "9800000001" },
   { label: "Hospital desk", phone: "9800000002" },
+  { label: "Reception", phone: "9800000005" },
   { label: "Doctor", phone: "9800000003" },
   { label: "Admin", phone: "9800000004" },
 ];

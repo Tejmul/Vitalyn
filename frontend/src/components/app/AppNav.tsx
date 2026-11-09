@@ -51,7 +51,7 @@ export function AppNav() {
           <div className="flex items-center gap-2">
             <span className="hidden text-right sm:block">
               <span className="block text-[14px] font-semibold leading-tight text-ink">{user.name}</span>
-              <span className="block text-[12px] leading-tight text-muted">{{ USER: "Patient", HOSPITAL: "Hospital desk", DOCTOR: "Doctor", ADMIN: "Platform admin" }[user.role]}</span>
+              <span className="block text-[12px] leading-tight text-muted">{user.role === "HOSPITAL" ? (user.staffRole === "RECEPTION" ? "Reception" : "Hospital manager") : { USER: "Patient", HOSPITAL: "Hospital desk", DOCTOR: "Doctor", ADMIN: "Platform admin" }[user.role]}</span>
             </span>
             <button
               onClick={async () => {

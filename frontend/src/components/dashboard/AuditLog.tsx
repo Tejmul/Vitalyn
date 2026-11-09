@@ -19,6 +19,9 @@ const LABEL: Record<string, string> = {
   "incident.update": "Updated an incident",
   "review.hide": "Hid a review",
   "review.restore": "Restored a review",
+  "staff.create": "Added a staff login",
+  "staff.disable": "Turned off a staff login",
+  "staff.enable": "Turned a staff login back on",
 };
 
 /** Every admin action and every view of patient data, newest first. */

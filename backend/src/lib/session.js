@@ -58,6 +58,10 @@ export async function rotateSession(req, res) {
     throw new HttpError(401, "For your safety you've been logged out. Please log in again");
   }
   if (token.expiresAt < new Date()) throw new HttpError(401, "Your session has expired. Please log in again");
+  if (token.user.disabledAt) {
+    await prisma.refreshToken.updateMany({ where: { userId: token.userId, revokedAt: null }, data: { revokedAt: new Date() } });
+    throw new HttpError(401, "Your access has been removed. Ask your hospital manager");
+  }
   await prisma.refreshToken.update({ where: { id: token.id }, data: { revokedAt: new Date() } });
   const accessToken = await startSession(req, res, token.user);
   return { accessToken, user: token.user };
