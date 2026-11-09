@@ -8,6 +8,7 @@ import { indianMobile } from "../lib/schemas.js";
 import { isSlotClash, logEvent, nextToken, smsVars, transition, withTokenRetry } from "../lib/transitions.js";
 import { queueSms } from "../lib/notify.js";
 import { callNext, doctorQueue } from "../lib/queue.js";
+import { promoTotals } from "../lib/promoStats.js";
 import { tokenCode } from "../lib/transitions.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 
@@ -301,6 +302,18 @@ manageRouter.delete("/doctors/:id/leave/:date", async (req, res) => {
   const doc = await ownDoctor(s, String(req.params.id));
   await prisma.doctorLeave.deleteMany({ where: { doctorId: doc.id, date: String(req.params.date) } });
   res.status(204).end();
+});
+
+/** The hospital's own promotions with their numbers (read-only; the platform sells and edits them). */
+manageRouter.get("/promotions", requireRole("HOSPITAL"), async (req, res) => {
+  const s = await scope(req.user);
+  const promotions = await prisma.promotion.findMany({
+    where: { hospitalId: s.hospitalId },
+    orderBy: { startsAt: "desc" },
+    select: { id: true, title: true, highlight: true, startsAt: true, endsAt: true, active: true, archivedAt: true },
+  });
+  const totals = await promoTotals(prisma, promotions.map((p) => p.id));
+  res.json({ promotions: promotions.map((p) => ({ ...p, stats: totals.get(p.id) ?? { impressions: 0, clicks: 0, bookings: 0 } })) });
 });
 
 /** The hospital's own public profile. Name, address and registry IDs are changed by the platform admin. */
