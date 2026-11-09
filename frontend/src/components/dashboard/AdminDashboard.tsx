@@ -241,9 +241,12 @@ type AdminDoctor = { id: string; name: string; specialty: string; qualification:
 function DoctorChecks({ hospitalId }: { hospitalId: string }) {
   const req = useApi<{ doctors: AdminDoctor[] }>(`/admin/hospitals/${hospitalId}/doctors`);
   const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const toggle = async (d: AdminDoctor) => {
     setBusy(d.id);
-    await api(`/admin/doctors/${d.id}`, { method: "PATCH", body: { verified: !d.registrationVerifiedAt } }).catch(() => {});
+    setError(null);
+    // Send the number on screen, so a change by the hospital since loading isn't verified unseen
+    await api(`/admin/doctors/${d.id}`, { method: "PATCH", body: { verified: !d.registrationVerifiedAt, registrationNo: d.registrationNo ?? undefined } }).catch((e: Error) => setError(e.message));
     setBusy(null);
     req.reload();
   };
@@ -251,6 +254,11 @@ function DoctorChecks({ hospitalId }: { hospitalId: string }) {
   return (
     <div className="mt-3">
       <p className="text-[13px] font-semibold text-ink-2">Doctors · check each council / HPR number against the registry</p>
+      {error && (
+        <div className="mt-2">
+          <ErrorNote>{error}</ErrorNote>
+        </div>
+      )}
       {docs.length === 0 ? (
         <p className="mt-1 text-[13px] text-muted">No doctors added yet.</p>
       ) : (
