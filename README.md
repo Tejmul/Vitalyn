@@ -199,6 +199,7 @@ Base URL `/api`. Authenticated routes need `Authorization: Bearer <token>`. Erro
 | GET | `/hospitals/:slug/reviews` | visible verified reviews (first name + initial) with the average |
 | GET | `/hospitals/:slug/queue` | public "Now serving" board (tokens only, no names) for the waiting-room TV at `/queue/:slug` |
 | GET | `/events` | upcoming events across hospitals |
+| POST | `/promotions/:id/click` | someone opened a hospital from its sponsored card (rate-limited, no personal data) |
 
 </details>
 
@@ -236,6 +237,7 @@ Base URL `/api`. Authenticated routes need `Authorization: Bearer <token>`. Erro
 | POST | `/manage/doctors` | hospital | add a doctor (name, speciality, qualification, fee, languages, registration no.) |
 | PATCH | `/manage/doctors/:id` | hospital | OPD days, hours, slot length, auto-confirm, details, stop/resume bookings |
 | GET / PATCH | `/manage/hospital` | hospital | the hospital's own profile, including the desk's WhatsApp number |
+| GET | `/manage/promotions` | hospital | its own promotions with views, clicks and bookings (read-only) |
 | POST / DELETE | `/manage/doctors/:id/leave` | hospital, doctor | cancels that day's bookings and notifies patients |
 | GET / POST / DELETE | `/manage/events` | hospital | health camps, drives, talks |
 
@@ -255,7 +257,7 @@ Base URL `/api`. Authenticated routes need `Authorization: Bearer <token>`. Erro
 | GET / PATCH | `/admin/reviews` | review moderation: hide with a reason, or restore (rating recalculates) |
 | GET / POST / PATCH | `/admin/incidents` | breach and incident log with reporting clocks |
 | GET | `/admin/users` | recent sign-ups |
-| GET / POST | `/admin/promotions` | list, create |
+| GET / POST | `/admin/promotions` | list (with views, clicks, bookings), create |
 | PATCH / DELETE | `/admin/promotions/:id` | pause, resume, priority; DELETE archives (record kept) |
 
 </details>
@@ -268,7 +270,8 @@ India's National Medical Commission issued Guidelines on Ethical Advertising on 
 2. **Rank organically.** Distance 50%, rating 25%, soonest free slot 25%.
 3. **Capped boost.** A sponsored hospital moves up at most **3 places**, only within **10 km**, and at most **2** sponsored cards sit in the top 5.
 4. **Label it.** Every sponsored card says so, with a "Why am I seeing this?" explanation.
-5. **Block claims.** Event and promotion text can't use words like "cure", "guaranteed", "best" or "No.1" (`backend/src/lib/claims.js`).
+5. **Measure it.** Views (sponsored card served), clicks (hospital opened from that card, once per browser session) and bookings (made at that hospital in the same session) are counted per day, with no personal data. The admin sees them per promotion; each hospital sees its own.
+6. **Block claims.** Event and promotion text can't use words like "cure", "guaranteed", "best" or "No.1" (`backend/src/lib/claims.js`).
 
 ## Privacy and compliance
 
