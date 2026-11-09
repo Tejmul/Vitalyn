@@ -523,8 +523,12 @@ async function main() {
       email: "hospital@vitalyn.in",
       phone: "9800000002",
       role: "HOSPITAL",
+      staffRole: "MANAGER",
       hospitalId: sab.id,
     },
+  });
+  await prisma.user.create({
+    data: { name: "Reception, Sabarmati", phone: "9800000005", role: "HOSPITAL", staffRole: "RECEPTION", hospitalId: sab.id },
   });
   const docUser = await prisma.user.create({
     data: {
@@ -652,7 +656,7 @@ async function main() {
     await prisma.hospital.update({ where: { id: visited.hospitalId }, data: { rating: 5, reviewCount: 1 } });
   }
 
-  console.log(`Seeded ${hospitals.length} hospitals, ${bookings.length} bookings, 4 demo accounts.`);
+  console.log(`Seeded ${hospitals.length} hospitals, ${bookings.length} bookings, 5 demo accounts.`);
 }
 
 main()
