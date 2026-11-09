@@ -154,7 +154,9 @@ function ApplicationCard({ a, onDone }: { a: HospitalApplication; onDone: () => 
 
 export function Applications({ onChange }: { onChange: () => void }) {
   const [status, setStatus] = useState<"PENDING" | "APPROVED" | "REJECTED">("PENDING");
-  const req = useApi<{ applications: HospitalApplication[] }>("/admin/applications", { status });
+  const [q, setQ] = useState("");
+  const [take, setTake] = useState(50);
+  const req = useApi<{ applications: HospitalApplication[]; total: number; hasMore: boolean }>("/admin/applications", { status, q: q.trim() || undefined, take });
   const rows = req.data?.applications ?? null;
   return (
     <Panel
@@ -172,6 +174,16 @@ export function Applications({ onChange }: { onChange: () => void }) {
       }
     >
       <p className="-mt-2 mb-4 text-[13.5px] text-muted">Check the registration number with the state register and that the map pin sits on the hospital before approving.</p>
+      <input
+        className={`${inputClass} mb-4`}
+        value={q}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setTake(50);
+        }}
+        placeholder="Search by hospital, city, contact, mobile or registration number"
+        aria-label="Search applications"
+      />
       {rows === null ? (
         <div className="h-40 animate-pulse rounded-2xl bg-mist" />
       ) : rows.length === 0 ? (
@@ -189,6 +201,16 @@ export function Applications({ onChange }: { onChange: () => void }) {
             />
           ))}
         </ul>
+      )}
+      {req.data?.hasMore && (
+        <div className="mt-4 flex items-center justify-between gap-3 text-[13.5px] text-muted">
+          <span>
+            Showing {rows?.length} of {req.data.total}
+          </span>
+          <Button variant="secondary" size="sm" onClick={() => setTake((t) => t + 50)}>
+            Show more
+          </Button>
+        </div>
       )}
     </Panel>
   );

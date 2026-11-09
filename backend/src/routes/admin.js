@@ -150,14 +150,28 @@ adminRouter.delete("/promotions/:id", async (req, res) => {
 
 /* ---------------- Hospital applications ---------------- */
 
+/** Newest first, searchable, with "show more", so a real application can't be pushed out of sight by newer ones. */
 adminRouter.get("/applications", async (req, res) => {
-  const { status } = z.object({ status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional() }).parse(req.query);
-  const applications = await prisma.hospitalApplication.findMany({
-    where: status ? { status } : {},
-    orderBy: [{ status: "asc" }, { createdAt: "desc" }],
-    take: 100,
-  });
-  res.json({ applications });
+  const { status, q, take } = z
+    .object({
+      status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
+      q: z.string().trim().max(80).optional(),
+      take: z.coerce.number().int().min(1).max(500).default(50),
+    })
+    .parse(req.query);
+  const search = q
+    ? {
+        OR: ["hospitalName", "city", "contactName", "contactEmail", "contactPhone", "registrationNo"].map((f) => ({
+          [f]: { contains: q, mode: "insensitive" },
+        })),
+      }
+    : {};
+  const where = { ...(status ? { status } : {}), ...search };
+  const [rows, total] = await Promise.all([
+    prisma.hospitalApplication.findMany({ where, orderBy: [{ status: "asc" }, { createdAt: "desc" }, { id: "desc" }], take }),
+    prisma.hospitalApplication.count({ where }),
+  ]);
+  res.json({ applications: rows, total, hasMore: total > rows.length });
 });
 
 /**

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { HttpError } from "../lib/http.js";
@@ -29,16 +30,25 @@ const applicationSchema = z.object({
   consent: z.literal(true, { error: "Please agree to the terms to apply" }),
 });
 
-onboardingRouter.post("/applications", async (req, res) => {
-  const data = applicationSchema.parse(req.body);
-  assertNoBannedClaims({ "the description": data.description });
+/** A hospital applies once; a handful per network per hour is plenty and keeps junk out of the admin's queue. */
+const applyLimiter = rateLimit({
+  windowMs: 60 * 60_000,
+  limit: 5,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  handler: (_req, res) => res.status(429).json({ error: "Too many applications from this network. Please try again in an hour" }),
+});
 
-  const [user, pending] = await Promise.all([
-    prisma.user.findFirst({ where: { OR: [{ email: data.contactEmail }, { phone: data.contactPhone }] } }),
-    prisma.hospitalApplication.findFirst({ where: { contactEmail: data.contactEmail, status: "PENDING" } }),
-  ]);
-  if (user) throw new HttpError(409, "An account with this email or mobile number already exists. Use a different one for the hospital desk");
-  if (pending) throw new HttpError(409, "There's already an application under review for this email");
+onboardingRouter.post("/applications", applyLimiter, async (req, res) => {
+  const data = applicationSchema.parse(req.body);
+  assertNoBannedClaims({ "the hospital name": data.hospitalName, "the description": data.description });
+
+  // Whether the contact's email or number already has a Vitalyn account is not revealed here:
+  // the admin sees that clash when approving and asks the applicant for another contact.
+  const pending = await prisma.hospitalApplication.findFirst({
+    where: { status: "PENDING", OR: [{ contactEmail: data.contactEmail }, { contactPhone: data.contactPhone }] },
+  });
+  if (pending) throw new HttpError(409, "There's already an application under review for this contact");
 
   const { consent: _consent, ...rest } = data;
   const application = await prisma.hospitalApplication.create({
