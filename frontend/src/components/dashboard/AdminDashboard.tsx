@@ -14,6 +14,7 @@ import { Messages } from "./Messages";
 import { Incidents } from "./Incidents";
 import { AuditLog } from "./AuditLog";
 import { ReviewsAdmin } from "./ReviewsAdmin";
+import { PromoStatsLine } from "./PromoStatsLine";
 
 type Overview = { counts: { users: number; hospitals: number; doctors: number; appointments: number; pending: number; activePromotions: number; applications: number } };
 type AdminHospital = {
@@ -160,6 +161,7 @@ function Promotions({ onChange }: { onChange: () => void }) {
                   <p className="mt-0.5 font-mono text-[12px] text-muted">
                     {new Date(p.startsAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} → {new Date(p.endsAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} · {p.hospital.city}
                   </p>
+                  <PromoStatsLine stats={p.stats} />
                 </div>
                 {p.archivedAt ? (
                   <span className="text-[12.5px] text-muted">Archived {new Date(p.archivedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })} · record kept</span>
