@@ -171,7 +171,12 @@ hospitalsRouter.get("/:slug", async (req, res) => {
   });
   if (!h || !h.verified) throw notFound("Hospital");
   const next = await nextFreeSlots([h.id]);
-  const doctors = h.doctors.map(({ leaves, ...d }) => ({ ...d, leaveDates: leaves.map((l) => l.date) }));
+  // Public view: no internal user link, and a registration number only once the admin has checked it
+  const doctors = h.doctors.map(({ leaves, userId: _userId, registrationNo, ...d }) => ({
+    ...d,
+    registrationNo: d.registrationVerifiedAt ? registrationNo : null,
+    leaveDates: leaves.map((l) => l.date),
+  }));
   res.json({ hospital: { ...withDistance({ ...h, doctors }, lat, lng), sponsored: false, nextSlotAt: next.get(h.id) ?? null } });
 });
 
