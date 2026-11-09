@@ -301,6 +301,8 @@ The full research behind these choices (15 apps compared, Indian regulations, mo
 Findings from a source review with the [Cloudflare security-audit skill](https://github.com/cloudflare/security-audit-skill), and what was done about each:
 
 - **Tokens are bound to their purpose.** Access tokens carry `typ: "access"` and an `access` audience; the short sign-up token (proof a phone passed OTP, no account yet) carries `signup`. Each is only accepted where it belongs, and the signing algorithm is pinned to HS256. Before this, a sign-up token passed as a login on routes that only needed "someone signed in".
+- **OTP limits hold under parallel requests.** Asking for a code takes a per-number PostgreSQL advisory lock, so ten requests at once send one SMS, not ten. Each guess claims one of the five attempts with a conditional update before the code is compared, and a code can be consumed only once. Codes are hashed with their own key derived from `JWT_SECRET`.
+- **Client IP comes from a configured proxy count.** `TRUST_PROXY` (default `1`) must match the hosting: `1` for Railway/Render/one nginx, `2` behind a CDN plus load balancer, `false` when the API is reached directly. `true` is refused. A wrong value would let clients choose their own IP for rate limiting, or put everyone behind one shared limit.
 
 ## Project structure
 
@@ -331,7 +333,7 @@ Vitalyn/
 | Part | Where | Settings |
 |---|---|---|
 | Database | Any managed Postgres in an Indian region (e.g. AWS RDS Mumbai) | run `npx prisma migrate deploy` |
-| Backend | Railway, Render, a VM or container | `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGIN`, `NODE_ENV=production`, MSG91 keys, and `COOKIE_SAMESITE=none` if the site and API are on different domains; then `npm start` |
+| Backend | Railway, Render, a VM or container | `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGIN`, `NODE_ENV=production`, `TRUST_PROXY` (proxy hops in front of the API), MSG91 keys, and `COOKIE_SAMESITE=none` if the site and API are on different domains; then `npm start` |
 | Frontend | Vercel (Mumbai region) or any Node host | `NEXT_PUBLIC_API_URL` pointing at the API |
 
 The expiry job runs inside the API process. With more than one API instance, move it to a single worker.
