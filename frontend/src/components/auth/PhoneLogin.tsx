@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, MessageSquareText } from "lucide-react";
+import { safeNext } from "@/lib/safeNext";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/Button";
 import { ErrorNote, Field, inputClass } from "@/components/ui/Field";
@@ -47,7 +48,7 @@ export function PhoneLogin({ mode }: { mode: "login" | "register" }) {
     return () => clearInterval(id);
   }, [step]);
 
-  const goNext = () => router.push(next?.startsWith("/") ? next : "/dashboard");
+  const goNext = () => router.push(safeNext(next));
 
   const send = async (p = phone) => {
     setBusy("send");

@@ -38,7 +38,22 @@ if (typeof window !== "undefined") {
 type Query = Record<string, string | number | undefined | null>;
 type Opts = { method?: string; body?: unknown; query?: Query };
 
+/**
+ * Paths are written in code; query strings go in `opts.query`. A path with `..`, `?`, `#` or a
+ * backslash means a value from the URL leaked into it unencoded and could aim the request (with
+ * the user's token) at a different endpoint, so it is refused.
+ */
+function assertSafePath(path: string) {
+  if (!path.startsWith("/") || /[?#\\]/.test(path) || /(^|\/)\.{1,2}(\/|$)/.test(path) || /%2e|%2f|%5c/i.test(path)) {
+    throw new ApiError(400, "That link isn't valid");
+  }
+}
+
+/** For values that go into a path segment (ids, slugs). */
+export const seg = (v: string | number) => encodeURIComponent(String(v));
+
 async function raw(path: string, opts: Opts, token: string | null): Promise<Response> {
+  assertSafePath(path);
   const url = new URL(BASE + path);
   for (const [k, v] of Object.entries(opts.query ?? {})) if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
   try {

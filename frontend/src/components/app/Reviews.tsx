@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { BadgeCheck, Star } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, seg } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import type { PublicReview } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
@@ -66,7 +66,7 @@ export function ReviewForm({ appointmentId, onDone }: { appointmentId: string; o
 
 /** Verified reviews on a hospital page. */
 export function HospitalReviews({ slug }: { slug: string }) {
-  const req = useApi<{ rating: number; count: number; reviews: PublicReview[] }>(`/hospitals/${slug}/reviews`);
+  const req = useApi<{ rating: number; count: number; reviews: PublicReview[] }>(`/hospitals/${seg(slug)}/reviews`);
   const d = req.data;
   return (
     <div className="mt-12">
